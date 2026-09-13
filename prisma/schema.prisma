@@ -32,8 +32,9 @@ model User {
   role          Role     @default(USER)
   createdAt     DateTime @default(now())
 
-  heldSeats Seat[]    @relation("SeatHolder")
-  bookings  Booking[]
+  heldSeats     Seat[]         @relation("SeatHolder")
+  bookings      Booking[]
+  refreshTokens RefreshToken[]
 }
 
 model Show {
@@ -91,4 +92,28 @@ model BookingSeat {
   seat      Seat    @relation(fields: [seatId], references: [id])
 
   @@id([bookingId, seatId])
+}
+
+model RefreshToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model OtpCode {
+  id         Int       @id @default(autoincrement())
+  email      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email])
 }
