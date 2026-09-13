@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import request from "supertest";
-import { SeatStatus, Show } from "@prisma/client";
+import { Role, SeatStatus, Show } from "@prisma/client";
 import { createApp } from "../app";
 import { FakeEmailSender } from "../auth/FakeEmailSender";
 import { issueTokenPair } from "../auth/tokens";
@@ -45,6 +45,75 @@ describe("seats routes", () => {
       const entry = res.body.shows.find((s: { id: number }) => s.id === showId);
       // seat 1 (available) + seat 4 (expired hold) = 2
       expect(entry.availableSeatCount).toBe(2);
+    });
+  });
+
+  describe("POST /shows", () => {
+    it("rejects an unauthenticated request", async () => {
+      const res = await request(app)
+        .post("/shows")
+        .send({ movieName: "M", venue: "V", showtime: new Date(Date.now() + 86_400_000), rows: 2, columns: 2, basePrice: 100 });
+      expect(res.status).toBe(401);
+    });
+
+    it("rejects a non-admin user", async () => {
+      const user = await createTestUser(Role.USER);
+      userIds = [user.id];
+      const { accessToken } = await issueTokenPair(user.id, user.role);
+
+      const res = await request(app)
+        .post("/shows")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ movieName: "M", venue: "V", showtime: new Date(Date.now() + 86_400_000), rows: 2, columns: 2, basePrice: 100 });
+
+      expect(res.status).toBe(403);
+    });
+
+    it("rejects invalid input (e.g. a showtime in the past) with 400", async () => {
+      const admin = await createTestUser(Role.ADMIN);
+      userIds = [admin.id];
+      const { accessToken } = await issueTokenPair(admin.id, admin.role);
+
+      const res = await request(app)
+        .post("/shows")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({
+          movieName: "M",
+          venue: "V",
+          showtime: new Date(Date.now() - 86_400_000),
+          rows: 2,
+          columns: 2,
+          basePrice: 100,
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("INVALID_SHOW_INPUT");
+    });
+
+    it("creates a show with the correct number of seats", async () => {
+      const admin = await createTestUser(Role.ADMIN);
+      userIds = [admin.id];
+      const { accessToken } = await issueTokenPair(admin.id, admin.role);
+
+      const res = await request(app)
+        .post("/shows")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({
+          movieName: "Test Movie",
+          venue: "Test Venue",
+          showtime: new Date(Date.now() + 86_400_000),
+          rows: 3,
+          columns: 5,
+          basePrice: 199,
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.seatsCreated).toBe(15);
+
+      const seats = await prisma.seat.findMany({ where: { showId: res.body.show.id } });
+      expect(seats).toHaveLength(15);
+
+      await cleanupShow(res.body.show.id);
     });
   });
 

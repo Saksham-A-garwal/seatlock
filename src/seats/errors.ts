@@ -5,9 +5,9 @@ export class SeatNotFoundError extends Error {
   }
 }
 
-export class ShowNotFoundError extends Error {
-  constructor() {
-    super("Show not found");
-    this.name = "ShowNotFoundError";
+export class InvalidShowInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidShowInputError";
   }
 }

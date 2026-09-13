@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../db/prisma";
-import { requireAuth } from "../auth/middleware";
+import { requireAdmin, requireAuth } from "../auth/middleware";
 import { asyncHandler } from "../utils/asyncHandler";
 import { SeatUnavailableError } from "../domain/errors";
 import { config } from "../config";
@@ -10,12 +10,14 @@ import { redisClient } from "../rateLimit/redisClient";
 import { parsePositiveInt } from "../utils/parsePositiveInt";
 import { HoldService } from "./HoldService";
 import { SeatRepository } from "./SeatRepository";
-import { SeatNotFoundError } from "./errors";
+import { ShowService } from "./ShowService";
+import { InvalidShowInputError, SeatNotFoundError } from "./errors";
 
 export function createSeatsRouter(): Router {
   const router = Router();
   const seatRepository = new SeatRepository();
   const holdService = new HoldService(seatRepository);
+  const showService = new ShowService();
   const rateLimiter = new RateLimiter(redisClient);
   const holdLimit = { keyPrefix: "hold", windowSeconds: 60, max: config.rateLimits.holdPerUserPerMinute };
 
@@ -39,6 +41,67 @@ export function createSeatsRouter(): Router {
       );
 
       res.status(200).json({ shows: withCounts });
+    })
+  );
+
+  router.post(
+    "/shows",
+    requireAuth,
+    requireAdmin,
+    asyncHandler(async (req, res) => {
+      const body = req.body as {
+        movieName?: unknown;
+        venue?: unknown;
+        showtime?: unknown;
+        rows?: unknown;
+        columns?: unknown;
+        basePrice?: unknown;
+      };
+
+      if (
+        typeof body.movieName !== "string" ||
+        typeof body.venue !== "string" ||
+        typeof body.showtime !== "string" ||
+        typeof body.rows !== "number" ||
+        typeof body.columns !== "number" ||
+        typeof body.basePrice !== "number"
+      ) {
+        res.status(400).json({
+          error: {
+            code: "INVALID_REQUEST",
+            message: "movieName, venue, showtime (string) and rows, columns, basePrice (number) are all required",
+          },
+        });
+        return;
+      }
+
+      try {
+        const { show, seatsCreated } = await showService.createShow({
+          movieName: body.movieName,
+          venue: body.venue,
+          showtime: new Date(body.showtime),
+          rows: body.rows,
+          columns: body.columns,
+          basePrice: body.basePrice,
+        });
+        res.status(201).json({
+          show: {
+            id: show.id,
+            movieName: show.movieName,
+            venue: show.venue,
+            showtime: show.showtime,
+            rows: show.rows,
+            columns: show.columns,
+          },
+          seatsCreated,
+        });
+      } catch (error) {
+        if (error instanceof InvalidShowInputError) {
+          res.status(400).json({ error: { code: "INVALID_SHOW_INPUT", message: error.message } });
+          return;
+        }
+        throw error;
+      }
     })
   );
 
