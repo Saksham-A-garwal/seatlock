@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SeatStatus } from "@prisma/client";
 import { prisma } from "../db/prisma";
 import { SeatUnavailableError } from "../domain/errors";
@@ -93,6 +93,24 @@ describe("HoldService", () => {
     userIds.push(user.id);
 
     await expect(holdService.holdSeats(showId, [booked.id], user.id, 5)).rejects.toThrow(SeatUnavailableError);
+  });
+
+  it("does NOT retry a genuine 409 (SeatUnavailableError) -- the resilience wrapper only retries transient DB failures", async () => {
+    const show = await createTestShow();
+    showId = show.id;
+    const booked = await createTestSeat(showId, { status: SeatStatus.BOOKED });
+    const user = await createTestUser();
+    userIds.push(user.id);
+
+    const transactionSpy = vi.spyOn(prisma, "$transaction");
+
+    await expect(holdService.holdSeats(showId, [booked.id], user.id, 5)).rejects.toThrow(SeatUnavailableError);
+
+    // A business rejection is a correct, final answer on the first try --
+    // retrying it would only add latency, never change the outcome.
+    expect(transactionSpy).toHaveBeenCalledOnce();
+
+    transactionSpy.mockRestore();
   });
 
   it("allows holding a seat whose previous hold has already expired", async () => {

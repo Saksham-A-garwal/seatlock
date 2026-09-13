@@ -4,6 +4,7 @@ import { SeatStatus, Show } from "@prisma/client";
 import { createApp } from "../app";
 import { FakeEmailSender } from "../auth/FakeEmailSender";
 import { issueTokenPair } from "../auth/tokens";
+import { config } from "../config";
 import { prisma } from "../db/prisma";
 import { cleanupShow, cleanupUsers, createTestSeat, createTestShow, createTestUser } from "./testHelpers";
 
@@ -120,5 +121,41 @@ describe("seats routes", () => {
       expect(res.body.seats[0].status).toBe("HELD");
       expect(res.body.holdExpiresAt).toBeTruthy();
     });
+
+    it(
+      "rate-limits a single user past the configured per-minute hold limit",
+      async () => {
+        show = await createTestShow();
+        const showId = show.id;
+        const user = await createTestUser();
+        userIds = [user.id];
+        const { accessToken } = await issueTokenPair(user.id, user.role);
+        const limit = config.rateLimits.holdPerUserPerMinute;
+
+        const seats = await Promise.all(
+          Array.from({ length: limit }, (_, i) => createTestSeat(showId, { seatNumber: i + 1 }))
+        );
+
+        // `limit` requests, each holding a distinct real seat -- all must succeed.
+        for (const seat of seats) {
+          const res = await request(app)
+            .post(`/shows/${showId}/hold`)
+            .set("Authorization", `Bearer ${accessToken}`)
+            .send({ seatIds: [seat.id] });
+          expect(res.status).toBe(200);
+        }
+
+        // The next request from the SAME user, within the same window, is over the limit.
+        const extraSeat = await createTestSeat(showId, { seatNumber: limit + 1 });
+        const blocked = await request(app)
+          .post(`/shows/${showId}/hold`)
+          .set("Authorization", `Bearer ${accessToken}`)
+          .send({ seatIds: [extraSeat.id] });
+
+        expect(blocked.status).toBe(429);
+        expect(blocked.body.error.code).toBe("RATE_LIMITED");
+      },
+      20_000
+    );
   });
 });

@@ -33,4 +33,22 @@ export const config = {
   stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
   stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",
+
+  upstash: {
+    restUrl: process.env.UPSTASH_REDIS_REST_URL ?? "",
+    restToken: process.env.UPSTASH_REDIS_REST_TOKEN ?? "",
+  },
+
+  resilience: {
+    maxAttempts: Number(process.env.RESILIENCE_MAX_ATTEMPTS ?? "3"),
+    baseDelayMs: Number(process.env.RESILIENCE_BASE_DELAY_MS ?? "200"),
+    timeoutMs: Number(process.env.RESILIENCE_TIMEOUT_MS ?? "5000"),
+  },
+
+  rateLimits: {
+    authIpPerMinute: Number(process.env.RATE_LIMIT_AUTH_IP_PER_MINUTE ?? "5"),
+    otpEmailPerMinute: Number(process.env.RATE_LIMIT_OTP_EMAIL_PER_MINUTE ?? "3"),
+    holdPerUserPerMinute: Number(process.env.RATE_LIMIT_HOLD_PER_USER_PER_MINUTE ?? "10"),
+    paymentIntentPerUserPerMinute: Number(process.env.RATE_LIMIT_PAYMENT_INTENT_PER_USER_PER_MINUTE ?? "5"),
+  },
 };

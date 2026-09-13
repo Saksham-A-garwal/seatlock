@@ -5,6 +5,9 @@ import { requireAuth } from "../auth/middleware";
 import { asyncHandler } from "../utils/asyncHandler";
 import { config } from "../config";
 import { prisma } from "../db/prisma";
+import { RateLimiter } from "../rateLimit/RateLimiter";
+import { rateLimitByUser } from "../rateLimit/middleware";
+import { redisClient } from "../rateLimit/redisClient";
 import { SeatNotFoundError } from "../seats/errors";
 import { HoldNotValidError } from "./errors";
 import { PaymentService } from "./PaymentService";
@@ -69,10 +72,17 @@ export function createPaymentsWebhookRouter(paymentService: PaymentService): Rou
 // JSON-body routes.
 export function createPaymentsRouter(paymentService: PaymentService): Router {
   const router = Router();
+  const rateLimiter = new RateLimiter(redisClient);
+  const createIntentLimit = {
+    keyPrefix: "payment-intent",
+    windowSeconds: 60,
+    max: config.rateLimits.paymentIntentPerUserPerMinute,
+  };
 
   router.post(
     "/payments/create-intent",
     requireAuth,
+    rateLimitByUser(rateLimiter, createIntentLimit),
     asyncHandler(async (req, res) => {
       const { showId, seatIds } = req.body as { showId?: unknown; seatIds?: unknown };
 

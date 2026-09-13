@@ -4,6 +4,9 @@ import { requireAuth } from "../auth/middleware";
 import { asyncHandler } from "../utils/asyncHandler";
 import { SeatUnavailableError } from "../domain/errors";
 import { config } from "../config";
+import { RateLimiter } from "../rateLimit/RateLimiter";
+import { rateLimitByUser } from "../rateLimit/middleware";
+import { redisClient } from "../rateLimit/redisClient";
 import { HoldService } from "./HoldService";
 import { SeatRepository } from "./SeatRepository";
 import { SeatNotFoundError } from "./errors";
@@ -17,6 +20,8 @@ export function createSeatsRouter(): Router {
   const router = Router();
   const seatRepository = new SeatRepository();
   const holdService = new HoldService(seatRepository);
+  const rateLimiter = new RateLimiter(redisClient);
+  const holdLimit = { keyPrefix: "hold", windowSeconds: 60, max: config.rateLimits.holdPerUserPerMinute };
 
   router.get(
     "/shows",
@@ -77,6 +82,7 @@ export function createSeatsRouter(): Router {
   router.post(
     "/shows/:id/hold",
     requireAuth,
+    rateLimitByUser(rateLimiter, holdLimit),
     asyncHandler(async (req, res) => {
       const showId = parsePositiveInt(req.params.id);
       if (showId === null) {

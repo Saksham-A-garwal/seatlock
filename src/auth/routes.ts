@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { User } from "@prisma/client";
 import { asyncHandler } from "../utils/asyncHandler";
+import { config } from "../config";
+import { RateLimiter } from "../rateLimit/RateLimiter";
+import { rateLimitByEmail, rateLimitByIp } from "../rateLimit/middleware";
+import { redisClient } from "../rateLimit/redisClient";
 import { AuthTokenError, OtpError } from "./errors";
 import { OtpService } from "./otp";
 import passport from "./passport";
@@ -16,9 +20,14 @@ function toPublicUser(user: User) {
 // fake EmailSender instead of hitting Resend for real on every run.
 export function createAuthRouter(otpService: OtpService): Router {
   const router = Router();
+  const rateLimiter = new RateLimiter(redisClient);
+  const authIpLimit = { keyPrefix: "auth", windowSeconds: 60, max: config.rateLimits.authIpPerMinute };
+  const otpEmailLimit = { keyPrefix: "otp-request", windowSeconds: 60, max: config.rateLimits.otpEmailPerMinute };
 
   router.post(
     "/otp/request",
+    rateLimitByIp(rateLimiter, authIpLimit),
+    rateLimitByEmail(rateLimiter, otpEmailLimit),
     asyncHandler(async (req, res) => {
       const { email } = req.body as { email?: string };
       if (!email || !EMAIL_PATTERN.test(email)) {
@@ -33,6 +42,7 @@ export function createAuthRouter(otpService: OtpService): Router {
 
   router.post(
     "/otp/verify",
+    rateLimitByIp(rateLimiter, authIpLimit),
     asyncHandler(async (req, res) => {
       const { email, code } = req.body as { email?: string; code?: string };
       if (!email || !code) {
@@ -54,10 +64,15 @@ export function createAuthRouter(otpService: OtpService): Router {
     })
   );
 
-  router.get("/google", passport.authenticate("google", { scope: ["profile", "email"], session: false }));
+  router.get(
+    "/google",
+    rateLimitByIp(rateLimiter, authIpLimit),
+    passport.authenticate("google", { scope: ["profile", "email"], session: false })
+  );
 
   router.get(
     "/google/callback",
+    rateLimitByIp(rateLimiter, authIpLimit),
     passport.authenticate("google", { session: false }),
     asyncHandler(async (req, res) => {
       const user = req.user as User;
