@@ -7,4 +7,88 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Models start in Milestone 1 (users, shows, seats, bookings, booking_seats).
+enum Role {
+  USER
+  ADMIN
+}
+
+enum SeatStatus {
+  AVAILABLE
+  HELD
+  BOOKED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  email         String   @unique
+  googleId      String?  @unique
+  emailVerified Boolean  @default(false)
+  role          Role     @default(USER)
+  createdAt     DateTime @default(now())
+
+  heldSeats Seat[]    @relation("SeatHolder")
+  bookings  Booking[]
+}
+
+model Show {
+  id        Int      @id @default(autoincrement())
+  movieName String
+  venue     String
+  showtime  DateTime
+  rows      Int
+  columns   Int
+  createdAt DateTime @default(now())
+
+  seats    Seat[]
+  bookings Booking[]
+}
+
+model Seat {
+  id            Int        @id @default(autoincrement())
+  showId        Int
+  show          Show       @relation(fields: [showId], references: [id])
+  rowLabel      String
+  seatNumber    Int
+  status        SeatStatus @default(AVAILABLE)
+  heldById      Int?
+  heldBy        User?      @relation("SeatHolder", fields: [heldById], references: [id])
+  holdExpiresAt DateTime?
+  price         Decimal    @db.Decimal(10, 2)
+
+  bookingSeats BookingSeat[]
+
+  @@unique([showId, rowLabel, seatNumber])
+  @@index([showId, status])
+}
+
+model Booking {
+  id          Int           @id @default(autoincrement())
+  userId      Int
+  user        User          @relation(fields: [userId], references: [id])
+  showId      Int
+  show        Show          @relation(fields: [showId], references: [id])
+  status      BookingStatus @default(PENDING)
+  totalPrice  Decimal       @db.Decimal(10, 2)
+  createdAt   DateTime      @default(now())
+  confirmedAt DateTime?
+  cancelledAt DateTime?
+
+  bookingSeats BookingSeat[]
+
+  @@index([userId])
+}
+
+model BookingSeat {
+  bookingId Int
+  booking   Booking @relation(fields: [bookingId], references: [id])
+  seatId    Int
+  seat      Seat    @relation(fields: [seatId], references: [id])
+
+  @@id([bookingId, seatId])
+}
