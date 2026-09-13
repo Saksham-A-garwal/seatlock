@@ -1,5 +1,8 @@
 import express, { Express } from "express";
+import cors from "cors";
+import cookieParser from "cookie-parser";
 import { Pool } from "pg";
+import { config } from "./config";
 import { createAuthRouter } from "./auth/routes";
 import { OtpService } from "./auth/otp";
 import { ResendEmailSender } from "./auth/ResendEmailSender";
@@ -26,7 +29,9 @@ export function createApp(options: CreateAppOptions = {}): Express {
   // needs the raw, unparsed request body.
   app.use(createPaymentsWebhookRouter(paymentService));
 
+  app.use(cors({ origin: config.frontendOrigin, credentials: true }));
   app.use(express.json());
+  app.use(cookieParser());
   app.use(passport.initialize());
 
   // Milestone 0 only: raw pg connection to prove DB connectivity before any

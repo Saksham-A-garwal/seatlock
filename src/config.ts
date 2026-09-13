@@ -10,6 +10,8 @@ function requireEnv(name: string): string {
 
 export const config = {
   port: Number(process.env.PORT ?? "3000"),
+  nodeEnv: process.env.NODE_ENV ?? "development",
+  frontendOrigin: process.env.FRONTEND_ORIGIN ?? "http://localhost:5173",
 
   jwtSecret: requireEnv("JWT_SECRET"),
   accessTokenTtlMinutes: Number(process.env.JWT_ACCESS_TTL_MINUTES ?? "15"),

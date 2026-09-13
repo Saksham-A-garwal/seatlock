@@ -201,4 +201,72 @@ describe("payments routes", () => {
       15_000
     );
   });
+
+  describe("GET /payments/:id", () => {
+    it("rejects an unauthenticated request", async () => {
+      const res = await request(app).get("/payments/1");
+      expect(res.status).toBe(401);
+    });
+
+    it("returns the payment's own status and bookingId", async () => {
+      show = await createTestShow();
+      const showId = show.id;
+      const seat = await createTestSeat(showId, { price: 100 });
+      const user = await createTestUser();
+      userIds = [user.id];
+      const { accessToken } = await issueTokenPair(user.id, user.role);
+      await prisma.seat.update({
+        where: { id: seat.id },
+        data: { status: SeatStatus.HELD, heldById: user.id, holdExpiresAt: new Date(Date.now() + 60_000) },
+      });
+
+      const intentRes = await request(app)
+        .post("/payments/create-intent")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ showId, seatIds: [seat.id] });
+      paymentIds.push(intentRes.body.paymentId);
+
+      const res = await request(app)
+        .get(`/payments/${intentRes.body.paymentId}`)
+        .set("Authorization", `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ id: intentRes.body.paymentId, status: "PENDING", bookingId: null });
+    });
+
+    it("returns 404 for another user's payment", async () => {
+      show = await createTestShow();
+      const showId = show.id;
+      const seat = await createTestSeat(showId, { price: 100 });
+      const [owner, attacker] = await Promise.all([createTestUser(), createTestUser()]);
+      userIds = [owner.id, attacker.id];
+      const { accessToken: ownerToken } = await issueTokenPair(owner.id, owner.role);
+      const { accessToken: attackerToken } = await issueTokenPair(attacker.id, attacker.role);
+      await prisma.seat.update({
+        where: { id: seat.id },
+        data: { status: SeatStatus.HELD, heldById: owner.id, holdExpiresAt: new Date(Date.now() + 60_000) },
+      });
+
+      const intentRes = await request(app)
+        .post("/payments/create-intent")
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .send({ showId, seatIds: [seat.id] });
+      paymentIds.push(intentRes.body.paymentId);
+
+      const res = await request(app)
+        .get(`/payments/${intentRes.body.paymentId}`)
+        .set("Authorization", `Bearer ${attackerToken}`);
+
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 404 for a non-existent payment", async () => {
+      const user = await createTestUser();
+      userIds = [user.id];
+      const { accessToken } = await issueTokenPair(user.id, user.role);
+
+      const res = await request(app).get("/payments/999999999").set("Authorization", `Bearer ${accessToken}`);
+      expect(res.status).toBe(404);
+    });
+  });
 });

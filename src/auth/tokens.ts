@@ -77,3 +77,14 @@ export async function rotateRefreshToken(rawToken: string): Promise<TokenPair> {
 
   return issueTokenPair(existing.userId, existing.user.role);
 }
+
+// Logout: marks the token used (if it's a real, still-valid one) so a
+// stolen cookie can't be replayed after the user has logged out. A
+// missing/already-used/unknown token is not an error here -- logout should
+// always succeed from the client's point of view.
+export async function revokeRefreshToken(rawToken: string): Promise<void> {
+  await prisma.refreshToken.updateMany({
+    where: { tokenHash: hashToken(rawToken), usedAt: null },
+    data: { usedAt: new Date() },
+  });
+}

@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Response, Router } from "express";
 import { User } from "@prisma/client";
 import { asyncHandler } from "../utils/asyncHandler";
 import { config } from "../config";
@@ -8,12 +8,31 @@ import { redisClient } from "../rateLimit/redisClient";
 import { AuthTokenError, OtpError } from "./errors";
 import { OtpService } from "./otp";
 import passport from "./passport";
-import { issueTokenPair, rotateRefreshToken } from "./tokens";
+import { issueTokenPair, revokeRefreshToken, rotateRefreshToken } from "./tokens";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const REFRESH_COOKIE_NAME = "refreshToken";
+// Scoped to just this one path so the cookie is never attached to any other
+// request -- it's useless to steal via XSS on any other endpoint, and the
+// browser doesn't even send it anywhere else in the first place.
+const REFRESH_COOKIE_PATH = "/auth/refresh";
 
 function toPublicUser(user: User) {
   return { id: user.id, email: user.email, role: user.role };
+}
+
+function setRefreshCookie(res: Response, refreshToken: string): void {
+  res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
+    httpOnly: true,
+    secure: config.nodeEnv === "production",
+    sameSite: "lax",
+    path: REFRESH_COOKIE_PATH,
+    maxAge: config.refreshTokenTtlDays * 24 * 60 * 60 * 1000,
+  });
+}
+
+function clearRefreshCookie(res: Response): void {
+  res.clearCookie(REFRESH_COOKIE_NAME, { path: REFRESH_COOKIE_PATH });
 }
 
 // otpService is injected rather than constructed here so tests can pass a
@@ -53,7 +72,8 @@ export function createAuthRouter(otpService: OtpService): Router {
       try {
         const user = await otpService.verifyCode(email, code);
         const tokens = await issueTokenPair(user.id, user.role);
-        res.status(200).json({ ...tokens, user: toPublicUser(user) });
+        setRefreshCookie(res, tokens.refreshToken);
+        res.status(200).json({ accessToken: tokens.accessToken, user: toPublicUser(user) });
       } catch (error) {
         if (error instanceof OtpError) {
           res.status(400).json({ error: { code: error.code, message: error.message } });
@@ -77,29 +97,48 @@ export function createAuthRouter(otpService: OtpService): Router {
     asyncHandler(async (req, res) => {
       const user = req.user as User;
       const tokens = await issueTokenPair(user.id, user.role);
-      res.status(200).json({ ...tokens, user: toPublicUser(user) });
+      setRefreshCookie(res, tokens.refreshToken);
+      // This is a full browser navigation (not an XHR call), so there's no
+      // JSON response to return here -- hand control back to the SPA, which
+      // bootstraps its in-memory access token via POST /auth/refresh (the
+      // cookie set above is already there for it to use).
+      res.redirect(`${config.frontendOrigin}/auth/callback`);
     })
   );
 
   router.post(
     "/refresh",
     asyncHandler(async (req, res) => {
-      const { refreshToken } = req.body as { refreshToken?: string };
+      const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME] as string | undefined;
       if (!refreshToken) {
-        res.status(400).json({ error: { code: "INVALID_REQUEST", message: "refreshToken is required" } });
+        res.status(401).json({ error: { code: "UNAUTHORIZED", message: "No refresh token cookie present" } });
         return;
       }
 
       try {
         const tokens = await rotateRefreshToken(refreshToken);
-        res.status(200).json(tokens);
+        setRefreshCookie(res, tokens.refreshToken);
+        res.status(200).json({ accessToken: tokens.accessToken });
       } catch (error) {
         if (error instanceof AuthTokenError) {
+          clearRefreshCookie(res);
           res.status(401).json({ error: { code: "UNAUTHORIZED", message: error.message } });
           return;
         }
         throw error;
       }
+    })
+  );
+
+  router.post(
+    "/logout",
+    asyncHandler(async (req, res) => {
+      const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME] as string | undefined;
+      if (refreshToken) {
+        await revokeRefreshToken(refreshToken);
+      }
+      clearRefreshCookie(res);
+      res.status(200).json({ message: "Logged out" });
     })
   );
 

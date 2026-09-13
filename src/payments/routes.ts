@@ -9,6 +9,7 @@ import { RateLimiter } from "../rateLimit/RateLimiter";
 import { rateLimitByUser } from "../rateLimit/middleware";
 import { redisClient } from "../rateLimit/redisClient";
 import { SeatNotFoundError } from "../seats/errors";
+import { parsePositiveInt } from "../utils/parsePositiveInt";
 import { HoldNotValidError } from "./errors";
 import { PaymentService } from "./PaymentService";
 import { stripeClient } from "./stripeClient";
@@ -116,6 +117,30 @@ export function createPaymentsRouter(paymentService: PaymentService): Router {
         }
         throw error;
       }
+    })
+  );
+
+  router.get(
+    "/payments/:id",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const paymentId = parsePositiveInt(req.params.id);
+      if (paymentId === null) {
+        res
+          .status(400)
+          .json({ error: { code: "INVALID_PAYMENT_ID", message: "paymentId must be a positive integer" } });
+        return;
+      }
+
+      const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+      // "Doesn't exist" and "exists but isn't yours" both come back as the
+      // same not-found response -- same IDOR-safety reasoning as bookings.
+      if (!payment || payment.userId !== req.auth!.id) {
+        res.status(404).json({ error: { code: "PAYMENT_NOT_FOUND", message: "Payment not found" } });
+        return;
+      }
+
+      res.status(200).json({ id: payment.id, status: payment.status, bookingId: payment.bookingId });
     })
   );
 

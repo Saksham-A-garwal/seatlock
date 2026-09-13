@@ -16,6 +16,8 @@
   "dependencies": {
     "@prisma/client": "^5.19.1",
     "@upstash/redis": "^1.38.4",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.3",
@@ -26,6 +28,8 @@
     "stripe": "^22.6.2"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.5.5",
