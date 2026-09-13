@@ -10,6 +10,7 @@ import { createSeatsRouter } from "./seats/routes";
 import { SeatRepository } from "./seats/SeatRepository";
 import { createPaymentsRouter, createPaymentsWebhookRouter } from "./payments/routes";
 import { PaymentService } from "./payments/PaymentService";
+import { createBookingsRouter } from "./bookings/routes";
 
 interface CreateAppOptions {
   emailSender?: EmailSender;
@@ -46,6 +47,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
   app.use("/auth", createAuthRouter(otpService));
   app.use(createSeatsRouter());
   app.use(createPaymentsRouter(paymentService));
+  app.use(createBookingsRouter());
 
   app.use(errorHandler);
 

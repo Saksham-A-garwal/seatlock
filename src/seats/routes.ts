@@ -7,14 +7,10 @@ import { config } from "../config";
 import { RateLimiter } from "../rateLimit/RateLimiter";
 import { rateLimitByUser } from "../rateLimit/middleware";
 import { redisClient } from "../rateLimit/redisClient";
+import { parsePositiveInt } from "../utils/parsePositiveInt";
 import { HoldService } from "./HoldService";
 import { SeatRepository } from "./SeatRepository";
 import { SeatNotFoundError } from "./errors";
-
-function parsePositiveInt(value: string): number | null {
-  const n = Number(value);
-  return Number.isInteger(n) && n > 0 ? n : null;
-}
 
 export function createSeatsRouter(): Router {
   const router = Router();
