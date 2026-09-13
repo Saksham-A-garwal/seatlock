@@ -1,0 +1,131 @@
+.page {
+  min-height: 60vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4) 0;
+}
+
+.card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--color-surface-raised);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.brand {
+  color: var(--color-accent);
+  margin-bottom: var(--space-1);
+}
+
+.title {
+  margin-bottom: 2px;
+}
+
+.subtitle {
+  margin: 0 0 var(--space-1) 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.googleButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 11px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--color-text);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  transition: border-color var(--transition);
+}
+
+.googleButton:hover {
+  border-color: var(--color-ink);
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.divider span {
+  padding: 0 var(--space-1);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.form label {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.form input {
+  padding: 11px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius);
+  transition: border-color var(--transition);
+}
+
+.form input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.form button[type="submit"] {
+  margin-top: var(--space-1);
+  padding: 11px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: #ffffff;
+  font-weight: 700;
+  transition: background var(--transition);
+}
+
+.form button[type="submit"]:hover:not(:disabled) {
+  background: var(--color-accent-dark);
+}
+
+.form button[type="submit"]:disabled {
+  opacity: 0.6;
+}
+
+.linkButton {
+  background: none;
+  border: none;
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  padding: var(--space-1) 0;
+  text-align: left;
+}
+
+.hint {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  margin: 0;
+}

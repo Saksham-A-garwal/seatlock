@@ -1,0 +1,161 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.headerInner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 14px var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: var(--color-ink);
+  text-decoration: none;
+  color: var(--color-accent);
+}
+
+.links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+}
+
+.links a {
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  padding: 6px 0;
+  border-bottom: 2px solid transparent;
+  transition:
+    color var(--transition),
+    border-color var(--transition);
+}
+
+.links a:hover {
+  color: var(--color-ink);
+}
+
+.activeLink {
+  color: var(--color-ink) !important;
+  border-bottom-color: var(--color-accent) !important;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--font-size-sm);
+}
+
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--color-accent-light);
+  color: var(--color-accent-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.email {
+  color: var(--color-text-muted);
+  display: none;
+}
+
+@media (min-width: 720px) {
+  .email {
+    display: inline;
+  }
+}
+
+.signOutButton {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 7px 14px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  transition:
+    border-color var(--transition),
+    color var(--transition);
+}
+
+.signOutButton:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.signInButton {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast) !important;
+  text-decoration: none;
+  border-radius: var(--radius-pill);
+  padding: 9px 18px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  transition: background var(--transition);
+}
+
+.signInButton:hover {
+  background: var(--color-accent-dark);
+}
+
+.content {
+  flex: 1;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: var(--space-3);
+}
+
+.footer {
+  background: var(--color-ink);
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: var(--space-6);
+}
+
+.footerInner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-3);
+}
+
+.footerBrand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  color: #ffffff;
+  color: var(--color-accent);
+}
+
+.footerTagline {
+  margin: var(--space-1) 0 0 0;
+  font-size: var(--font-size-sm);
+}

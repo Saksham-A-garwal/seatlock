@@ -1,0 +1,233 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Elements } from "@stripe/react-stripe-js";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { ApiError, createPaymentIntent, getPaymentStatus, type HeldSeat } from "../api/client";
+import { ErrorBanner } from "../components/ErrorBanner";
+import { PageSpinner } from "../components/PageSpinner";
+import { PaymentForm } from "./PaymentForm";
+import { stripePromise } from "./stripe";
+import styles from "./CheckoutPage.module.css";
+
+interface LocationState {
+  seats: HeldSeat[];
+  holdExpiresAt: string;
+}
+
+type Phase =
+  | { name: "loadingIntent" }
+  | { name: "paying"; clientSecret: string; paymentId: number }
+  | { name: "confirming" }
+  | { name: "confirmed"; bookingId: number }
+  | { name: "declined"; message: string }
+  | { name: "holdExpiredRace" }
+  | { name: "confirmTimeout" }
+  | { name: "error"; message: string };
+
+function formatCountdown(seconds: number): string {
+  const mm = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, "0");
+  const ss = Math.floor(seconds % 60)
+    .toString()
+    .padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
+const POLL_INTERVAL_MS = 1500;
+const POLL_TIMEOUT_MS = 30_000;
+
+export function CheckoutPage() {
+  const { id } = useParams<{ id: string }>();
+  const showId = Number(id);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const state = location.state as LocationState | null;
+
+  const [phase, setPhase] = useState<Phase>({ name: "loadingIntent" });
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Guards against StrictMode's dev-only double-invocation of mount effects
+  // -- harmless for a GET, but this creates a real Stripe PaymentIntent
+  // (and a Payment row) each time, so it shouldn't fire twice.
+  const hasStartedRef = useRef(false);
+
+  const startPaymentIntent = useCallback(async () => {
+    if (!state) return;
+    setPhase({ name: "loadingIntent" });
+    try {
+      const result = await createPaymentIntent(
+        showId,
+        state.seats.map((seat) => seat.id)
+      );
+      setPhase({ name: "paying", clientSecret: result.clientSecret, paymentId: result.paymentId });
+    } catch (err) {
+      setPhase({
+        name: "error",
+        message: err instanceof ApiError ? err.message : "Could not start checkout. Please try again.",
+      });
+    }
+  }, [state, showId]);
+
+  // No hold info to work with (direct nav, or a page refresh lost the
+  // in-memory navigation state) -- same honest treatment as an expired hold.
+  useEffect(() => {
+    if (!state) {
+      navigate(`/shows/${showId}`, {
+        replace: true,
+        state: { message: "Your hold expired — please reselect." },
+      });
+      return;
+    }
+    if (hasStartedRef.current) return;
+    hasStartedRef.current = true;
+    void startPaymentIntent();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The hold countdown -- redirects back to reselect if it runs out before
+  // the user has paid.
+  useEffect(() => {
+    if (!state) return;
+    function tick() {
+      const secondsLeft = Math.max(0, Math.round((new Date(state!.holdExpiresAt).getTime() - Date.now()) / 1000));
+      setRemainingSeconds(secondsLeft);
+      if (secondsLeft === 0 && (phase.name === "loadingIntent" || phase.name === "paying")) {
+        navigate(`/shows/${showId}`, {
+          replace: true,
+          state: { message: "Your hold expired — please reselect." },
+        });
+      }
+    }
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, phase.name, showId]);
+
+  // Polls for the webhook to land once Stripe has confirmed the charge
+  // client-side. Distinguishing a simple decline from the rare
+  // hold-expired-and-refunded race doesn't need a backend flag: Stripe
+  // itself already told us the charge succeeded, so if our own backend
+  // later reports FAILED, that combination IS the race case.
+  function startConfirming(paymentId: number) {
+    // Defensive: if this is somehow called again while a poll is already
+    // running, clear the old interval first -- otherwise reassigning the
+    // ref below would orphan it, leaking a second timer polling forever.
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    setPhase({ name: "confirming" });
+    const startedAt = Date.now();
+
+    pollTimerRef.current = setInterval(() => {
+      void (async () => {
+        if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          setPhase({ name: "confirmTimeout" });
+          return;
+        }
+        try {
+          const status = await getPaymentStatus(paymentId);
+          if (status.status === "SUCCEEDED" && status.bookingId) {
+            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+            setPhase({ name: "confirmed", bookingId: status.bookingId });
+          } else if (status.status === "FAILED") {
+            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+            setPhase({ name: "holdExpiredRace" });
+          }
+          // PENDING: keep polling.
+        } catch {
+          // A transient poll failure isn't fatal -- just try again next tick.
+        }
+      })();
+    }, POLL_INTERVAL_MS);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, []);
+
+  if (!state) {
+    return <PageSpinner />;
+  }
+
+  const total = state.seats.reduce((sum, seat) => sum + seat.price, 0);
+  const seatLabels = state.seats.map((seat) => `${seat.rowLabel}${seat.seatNumber}`).join(", ");
+
+  return (
+    <div className={styles.container}>
+      <h1>Checkout</h1>
+
+      <div className={styles.summary}>
+        <p>
+          Seats: <strong>{seatLabels}</strong>
+        </p>
+        <p>
+          Total: <strong>${total.toFixed(2)}</strong>
+        </p>
+        {(phase.name === "loadingIntent" || phase.name === "paying") && (
+          <p className={styles.countdown}>Complete booking in {formatCountdown(remainingSeconds)}</p>
+        )}
+      </div>
+
+      {phase.name === "loadingIntent" && <PageSpinner label="Preparing payment…" />}
+
+      {phase.name === "paying" && (
+        <Elements stripe={stripePromise} options={{ clientSecret: phase.clientSecret }}>
+          <PaymentForm
+            onSucceeded={() => startConfirming(phase.paymentId)}
+            onDeclined={(message) => setPhase({ name: "declined", message })}
+          />
+        </Elements>
+      )}
+
+      {phase.name === "confirming" && <PageSpinner label="Confirming your booking…" />}
+
+      {phase.name === "confirmed" && (
+        <div className={styles.confirmation}>
+          <h2>Booking confirmed</h2>
+          <p>Your seats are booked. Booking reference: #{phase.bookingId}</p>
+          <Link to="/bookings">View My Bookings</Link>
+        </div>
+      )}
+
+      {phase.name === "declined" && (
+        <div className={styles.declined}>
+          <ErrorBanner message={phase.message} />
+          <p className={styles.retryHint}>Your seats are still held — you can try again below.</p>
+          <button type="button" className={styles.retryButton} onClick={() => void startPaymentIntent()}>
+            Try again
+          </button>
+        </div>
+      )}
+
+      {phase.name === "holdExpiredRace" && (
+        <div className={styles.raceNotice}>
+          <h2>Your seat was released</h2>
+          <p>
+            Your payment succeeded, but your hold expired a moment before we could confirm it — this seat has
+            already been released back to other users. You have been automatically refunded; no charge will
+            appear on your statement.
+          </p>
+          <Link to={`/shows/${showId}`}>Choose another seat</Link>
+        </div>
+      )}
+
+      {phase.name === "confirmTimeout" && (
+        <div className={styles.raceNotice}>
+          <h2>Still confirming…</h2>
+          <p>
+            This is taking longer than expected. Your payment may still be processing — check My Bookings in a
+            minute, or contact support if it doesn't show up.
+          </p>
+          <Link to="/bookings">Check My Bookings</Link>
+        </div>
+      )}
+
+      {phase.name === "error" && <ErrorBanner message={phase.message} />}
+    </div>
+  );
+}

@@ -1,0 +1,111 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.scrollArea {
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
+}
+
+.grid {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--space-2);
+  margin: 0 auto;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rowLabel {
+  width: 20px;
+  text-align: center;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.seat {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 8px 8px 4px 4px;
+  border: 1.5px solid var(--color-border);
+  background: var(--seat-available-bg);
+  color: var(--color-text);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform var(--transition),
+    border-color var(--transition),
+    background var(--transition);
+}
+
+.seat:not(:disabled):hover {
+  border-color: var(--color-accent);
+  transform: translateY(-2px);
+}
+
+.seat:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.selected {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #ffffff;
+}
+
+.held {
+  background: var(--seat-held-bg);
+  border-color: var(--seat-held-bg);
+  color: var(--color-text-muted);
+}
+
+.booked {
+  background: var(--seat-booked-bg);
+  border-color: var(--seat-booked-bg);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2) 0 0 0;
+  border-top: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid var(--color-border);
+  background: var(--seat-available-bg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}

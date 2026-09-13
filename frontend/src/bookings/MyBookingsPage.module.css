@@ -1,0 +1,70 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  background: var(--color-surface-raised);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  box-shadow: var(--shadow-sm);
+}
+
+.card h3 {
+  margin: 0 0 4px 0;
+  font-size: var(--font-size-base);
+}
+
+.meta {
+  margin: 0 0 4px 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 12px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.confirmed {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.cancelled {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.cancelButton {
+  flex-shrink: 0;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-raised);
+  padding: 8px 18px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  transition: border-color var(--transition);
+}
+
+.cancelButton:hover {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.empty {
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: var(--space-5);
+}

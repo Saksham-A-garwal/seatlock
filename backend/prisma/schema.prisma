@@ -51,6 +51,7 @@ model Show {
   showtime  DateTime
   rows      Int
   columns   Int
+  posterUrl String?
   createdAt DateTime @default(now())
 
   seats    Seat[]

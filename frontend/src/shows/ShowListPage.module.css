@@ -1,0 +1,107 @@
+.hero {
+  background: linear-gradient(135deg, var(--color-ink) 0%, #2a0a10 55%, var(--color-accent-dark) 100%);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-4);
+  margin-bottom: var(--space-4);
+  color: #ffffff;
+}
+
+.heroTitle {
+  font-size: var(--font-size-2xl);
+  color: #ffffff;
+  margin-bottom: var(--space-1);
+}
+
+.heroSubtitle {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: var(--font-size-lg);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  text-decoration: none;
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform var(--transition),
+    box-shadow var(--transition);
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+.posterFrame {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  background: var(--color-surface);
+}
+
+.seatsBadge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(12, 12, 16, 0.72);
+  color: #fff;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  backdrop-filter: blur(4px);
+}
+
+.seatsBadgeLow {
+  background: var(--color-accent);
+}
+
+.cardBody {
+  padding: var(--space-2);
+}
+
+.movieName {
+  margin: 0 0 4px 0;
+  font-size: var(--font-size-base);
+  font-weight: 700;
+}
+
+.venue,
+.showtime {
+  margin: 0 0 2px 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.skeletonCard {
+  aspect-ratio: 2 / 3.6;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(90deg, var(--color-surface) 25%, #eceef2 37%, var(--color-surface) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.empty {
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: var(--space-5);
+}

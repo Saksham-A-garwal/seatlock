@@ -1,0 +1,63 @@
+.container {
+  max-width: 460px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.summary {
+  background: var(--color-surface-raised);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  box-shadow: var(--shadow-sm);
+}
+
+.summary p {
+  margin: 0 0 6px 0;
+}
+
+.countdown {
+  color: var(--color-warning);
+  font-weight: 700;
+}
+
+.confirmation,
+.raceNotice {
+  text-align: center;
+  padding: var(--space-4);
+  background: var(--color-surface-raised);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.confirmation h2 {
+  color: var(--color-success);
+}
+
+.declined {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.retryHint {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.retryButton {
+  align-self: flex-start;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-raised);
+  padding: 9px 18px;
+  font-weight: 600;
+  transition: border-color var(--transition);
+}
+
+.retryButton:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}

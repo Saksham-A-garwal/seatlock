@@ -15,6 +15,7 @@ export interface CreateShowInput {
   rows: number;
   columns: number;
   basePrice: number;
+  posterUrl?: string | null;
 }
 
 function rowLabelFor(rowIndex: number): string {
@@ -40,6 +41,9 @@ function validate(input: CreateShowInput, now: Date): void {
   if (!Number.isFinite(input.basePrice) || input.basePrice <= 0) {
     throw new InvalidShowInputError("basePrice must be a positive number");
   }
+  if (input.posterUrl && !/^https:\/\//.test(input.posterUrl)) {
+    throw new InvalidShowInputError("posterUrl must be an https:// URL");
+  }
 }
 
 export class ShowService {
@@ -56,6 +60,7 @@ export class ShowService {
               showtime: input.showtime,
               rows: input.rows,
               columns: input.columns,
+              posterUrl: input.posterUrl || null,
             },
           });
 

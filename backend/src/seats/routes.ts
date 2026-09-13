@@ -35,6 +35,7 @@ export function createSeatsRouter(): Router {
             movieName: show.movieName,
             venue: show.venue,
             showtime: show.showtime,
+            posterUrl: show.posterUrl,
             availableSeatCount: seats.filter((seat) => seat.isAvailable(now)).length,
           };
         })
@@ -56,6 +57,7 @@ export function createSeatsRouter(): Router {
         rows?: unknown;
         columns?: unknown;
         basePrice?: unknown;
+        posterUrl?: unknown;
       };
 
       if (
@@ -64,7 +66,8 @@ export function createSeatsRouter(): Router {
         typeof body.showtime !== "string" ||
         typeof body.rows !== "number" ||
         typeof body.columns !== "number" ||
-        typeof body.basePrice !== "number"
+        typeof body.basePrice !== "number" ||
+        (body.posterUrl !== undefined && typeof body.posterUrl !== "string")
       ) {
         res.status(400).json({
           error: {
@@ -83,6 +86,7 @@ export function createSeatsRouter(): Router {
           rows: body.rows,
           columns: body.columns,
           basePrice: body.basePrice,
+          posterUrl: body.posterUrl,
         });
         res.status(201).json({
           show: {
@@ -92,6 +96,7 @@ export function createSeatsRouter(): Router {
             showtime: show.showtime,
             rows: show.rows,
             columns: show.columns,
+            posterUrl: show.posterUrl,
           },
           seatsCreated,
         });
@@ -129,6 +134,7 @@ export function createSeatsRouter(): Router {
           movieName: show.movieName,
           venue: show.venue,
           showtime: show.showtime,
+          posterUrl: show.posterUrl,
         },
         seats: seats.map((seat) => ({
           id: seat.id,
