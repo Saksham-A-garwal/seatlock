@@ -11,7 +11,7 @@ export class ResendEmailSender implements EmailSender {
 
   async send(to: string, subject: string, body: string): Promise<void> {
     const { error } = await this.client.emails.send({
-      from: config.emailFrom,
+      from: `SeatLock <${config.emailFrom}>`,
       to,
       subject,
       text: body,
