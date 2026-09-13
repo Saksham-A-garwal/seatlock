@@ -7,6 +7,9 @@ import { EmailSender } from "./auth/EmailSender";
 import passport from "./auth/passport";
 import { errorHandler } from "./middleware/errorHandler";
 import { createSeatsRouter } from "./seats/routes";
+import { SeatRepository } from "./seats/SeatRepository";
+import { createPaymentsRouter, createPaymentsWebhookRouter } from "./payments/routes";
+import { PaymentService } from "./payments/PaymentService";
 
 interface CreateAppOptions {
   emailSender?: EmailSender;
@@ -14,6 +17,13 @@ interface CreateAppOptions {
 
 export function createApp(options: CreateAppOptions = {}): Express {
   const app = express();
+
+  const seatRepository = new SeatRepository();
+  const paymentService = new PaymentService(seatRepository);
+
+  // Must be mounted BEFORE express.json(): Stripe's webhook signature check
+  // needs the raw, unparsed request body.
+  app.use(createPaymentsWebhookRouter(paymentService));
 
   app.use(express.json());
   app.use(passport.initialize());
@@ -35,6 +45,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
   const otpService = new OtpService(emailSender);
   app.use("/auth", createAuthRouter(otpService));
   app.use(createSeatsRouter());
+  app.use(createPaymentsRouter(paymentService));
 
   app.use(errorHandler);
 

@@ -21,7 +21,8 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "pg": "^8.23.0",
-    "resend": "^6.28.0"
+    "resend": "^6.28.0",
+    "stripe": "^22.6.2"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

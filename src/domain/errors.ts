@@ -18,3 +18,10 @@ export class CancellationWindowPassedError extends Error {
     this.name = "CancellationWindowPassedError";
   }
 }
+
+export class InvalidPaymentTransitionError extends Error {
+  constructor(from: string, to: string) {
+    super(`Cannot transition payment from ${from} to ${to}`);
+    this.name = "InvalidPaymentTransitionError";
+  }
+}

@@ -24,6 +24,12 @@ enum BookingStatus {
   CANCELLED
 }
 
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
 model User {
   id            Int      @id @default(autoincrement())
   email         String   @unique
@@ -35,6 +41,7 @@ model User {
   heldSeats     Seat[]         @relation("SeatHolder")
   bookings      Booking[]
   refreshTokens RefreshToken[]
+  payments      Payment[]
 }
 
 model Show {
@@ -48,6 +55,7 @@ model Show {
 
   seats    Seat[]
   bookings Booking[]
+  payments Payment[]
 }
 
 model Seat {
@@ -81,6 +89,7 @@ model Booking {
   cancelledAt DateTime?
 
   bookingSeats BookingSeat[]
+  payment      Payment?
 
   @@index([userId])
 }
@@ -116,4 +125,27 @@ model OtpCode {
   createdAt  DateTime  @default(now())
 
   @@index([email])
+}
+
+model Payment {
+  id                    Int           @id @default(autoincrement())
+  userId                Int
+  user                  User          @relation(fields: [userId], references: [id])
+  showId                Int
+  show                  Show          @relation(fields: [showId], references: [id])
+  seatIds               Int[]
+  stripePaymentIntentId String        @unique
+  amount                Decimal       @db.Decimal(10, 2)
+  status                PaymentStatus @default(PENDING)
+  bookingId             Int?          @unique
+  booking               Booking?      @relation(fields: [bookingId], references: [id])
+  createdAt             DateTime      @default(now())
+
+  @@index([userId])
+}
+
+model WebhookEvent {
+  id          String   @id
+  type        String
+  processedAt DateTime @default(now())
 }
