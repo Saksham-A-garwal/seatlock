@@ -2,10 +2,12 @@ import { Response, Router } from "express";
 import { User } from "@prisma/client";
 import { asyncHandler } from "../utils/asyncHandler";
 import { config } from "../config";
+import { prisma } from "../db/prisma";
 import { RateLimiter } from "../rateLimit/RateLimiter";
 import { rateLimitByEmail, rateLimitByIp } from "../rateLimit/middleware";
 import { redisClient } from "../rateLimit/redisClient";
 import { AuthTokenError, OtpError } from "./errors";
+import { requireAuth } from "./middleware";
 import { OtpService } from "./otp";
 import passport from "./passport";
 import { issueTokenPair, revokeRefreshToken, rotateRefreshToken } from "./tokens";
@@ -139,6 +141,22 @@ export function createAuthRouter(otpService: OtpService): Router {
       }
       clearRefreshCookie(res);
       res.status(200).json({ message: "Logged out" });
+    })
+  );
+
+  router.get(
+    "/me",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      // Looked up fresh from the DB rather than trusting the JWT payload
+      // as-is (it only carries id + role) -- also means a role change takes
+      // effect immediately here, without waiting for the token to expire.
+      const user = await prisma.user.findUnique({ where: { id: req.auth!.id } });
+      if (!user) {
+        res.status(404).json({ error: { code: "USER_NOT_FOUND", message: "User not found" } });
+        return;
+      }
+      res.status(200).json(toPublicUser(user));
     })
   );
 

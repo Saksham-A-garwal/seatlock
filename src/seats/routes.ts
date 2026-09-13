@@ -124,6 +124,12 @@ export function createSeatsRouter(): Router {
       const now = new Date();
 
       res.status(200).json({
+        show: {
+          id: show.id,
+          movieName: show.movieName,
+          venue: show.venue,
+          showtime: show.showtime,
+        },
         seats: seats.map((seat) => ({
           id: seat.id,
           rowLabel: seat.rowLabel,
@@ -164,7 +170,13 @@ export function createSeatsRouter(): Router {
       try {
         const seats = await holdService.holdSeats(showId, seatIds as number[], req.auth!.id, config.holdTtlMinutes);
         res.status(200).json({
-          seats: seats.map((seat) => ({ id: seat.id, status: seat.status })),
+          seats: seats.map((seat) => ({
+            id: seat.id,
+            rowLabel: seat.rowLabel,
+            seatNumber: seat.seatNumber,
+            price: seat.price,
+            status: seat.status,
+          })),
           holdExpiresAt: seats[0].holdExpiresAt,
         });
       } catch (error) {

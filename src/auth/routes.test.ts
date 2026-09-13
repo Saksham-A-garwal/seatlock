@@ -87,6 +87,27 @@ describe("auth routes", () => {
     expect(afterLogoutRes.status).toBe(401);
   });
 
+  it("GET /auth/me returns the signed-in user, and rejects an unauthenticated request", async () => {
+    const emailSender = new FakeEmailSender();
+    const app = createApp({ emailSender });
+    const email = uniqueEmail();
+    createdEmails.push(email);
+
+    const unauthedRes = await request(app).get("/auth/me");
+    expect(unauthedRes.status).toBe(401);
+
+    await request(app).post("/auth/otp/request").send({ email });
+    const code = emailSender.lastCodeFor(email);
+    const verifyRes = await request(app).post("/auth/otp/verify").send({ email, code });
+
+    const meRes = await request(app)
+      .get("/auth/me")
+      .set("Authorization", `Bearer ${verifyRes.body.accessToken}`);
+
+    expect(meRes.status).toBe(200);
+    expect(meRes.body).toEqual({ id: verifyRes.body.user.id, email, role: "USER" });
+  });
+
   it("rejects a refresh request with no cookie at all", async () => {
     const app = createApp({ emailSender: new FakeEmailSender() });
 
