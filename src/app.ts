@@ -6,6 +6,7 @@ import { ResendEmailSender } from "./auth/ResendEmailSender";
 import { EmailSender } from "./auth/EmailSender";
 import passport from "./auth/passport";
 import { errorHandler } from "./middleware/errorHandler";
+import { createSeatsRouter } from "./seats/routes";
 
 interface CreateAppOptions {
   emailSender?: EmailSender;
@@ -33,6 +34,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
   const emailSender = options.emailSender ?? new ResendEmailSender();
   const otpService = new OtpService(emailSender);
   app.use("/auth", createAuthRouter(otpService));
+  app.use(createSeatsRouter());
 
   app.use(errorHandler);
 

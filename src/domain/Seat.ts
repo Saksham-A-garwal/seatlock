@@ -4,6 +4,8 @@ import { SeatUnavailableError } from "./errors";
 interface SeatData {
   id: number;
   showId: number;
+  rowLabel: string;
+  seatNumber: number;
   status: SeatStatus;
   heldById: number | null;
   holdExpiresAt: Date | null;
@@ -13,6 +15,8 @@ interface SeatData {
 export class Seat {
   readonly id: number;
   readonly showId: number;
+  readonly rowLabel: string;
+  readonly seatNumber: number;
   readonly price: number;
   status: SeatStatus;
   heldById: number | null;
@@ -21,6 +25,8 @@ export class Seat {
   constructor(data: SeatData) {
     this.id = data.id;
     this.showId = data.showId;
+    this.rowLabel = data.rowLabel;
+    this.seatNumber = data.seatNumber;
     this.price = data.price;
     this.status = data.status;
     this.heldById = data.heldById;

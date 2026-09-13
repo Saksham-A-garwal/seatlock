@@ -18,6 +18,9 @@ export const config = {
   otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES ?? "10"),
   otpMaxAttempts: Number(process.env.OTP_MAX_ATTEMPTS ?? "5"),
 
+  holdTtlMinutes: Number(process.env.HOLD_TTL_MINUTES ?? "5"),
+  holdSweepIntervalSeconds: Number(process.env.HOLD_SWEEP_INTERVAL_SECONDS ?? "30"),
+
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID ?? "",
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",

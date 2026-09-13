@@ -9,6 +9,8 @@ function makeSeat(id: number, status: SeatStatus, holdExpiresAt: Date | null = n
   return new Seat({
     id,
     showId: 1,
+    rowLabel: "A",
+    seatNumber: id,
     status,
     heldById: status === SeatStatus.HELD ? 99 : null,
     holdExpiresAt,

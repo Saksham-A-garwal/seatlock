@@ -9,6 +9,8 @@ function makeSeat(overrides: Partial<ConstructorParameters<typeof Seat>[0]> = {}
   return new Seat({
     id: 1,
     showId: 1,
+    rowLabel: "A",
+    seatNumber: 1,
     status: SeatStatus.AVAILABLE,
     heldById: null,
     holdExpiresAt: null,
