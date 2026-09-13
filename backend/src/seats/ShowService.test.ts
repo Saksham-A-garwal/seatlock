@@ -42,6 +42,25 @@ describe("ShowService.createShow", () => {
     expect(keys.size).toBe(12); // no duplicates
   });
 
+  // SRS edge case: "An admin creates a show with a duplicate seat layout
+  // key (e.g., row A seat 1 twice)." The rows x columns generation model
+  // means no ADMIN input path can actually produce this (there's no way to
+  // specify individual seat keys) -- the test above already proves the
+  // generator itself never does it. This test proves the deeper guarantee:
+  // even bypassing the generator entirely, the database's own unique
+  // constraint on (showId, rowLabel, seatNumber) refuses a duplicate,
+  // so the invariant holds regardless of what future code calls this table.
+  it("rejects a duplicate (showId, rowLabel, seatNumber) at the database level", async () => {
+    const { show } = await showService.createShow(baseInput({ rows: 1, columns: 1 }));
+    showId = show.id;
+
+    await expect(
+      prisma.seat.create({
+        data: { showId: show.id, rowLabel: "A", seatNumber: 1, price: 100 },
+      })
+    ).rejects.toThrow();
+  });
+
   it("labels rows with letters starting at A", async () => {
     const { show } = await showService.createShow(baseInput({ rows: 2, columns: 1 }));
     showId = show.id;
