@@ -58,7 +58,7 @@ export function SeatGrid({ seats, selectedSeatIds, onToggle, disabled = false }:
                     disabled={isDisabled}
                     onClick={() => onToggle(seat)}
                     aria-pressed={isSelected}
-                    aria-label={`Seat ${seat.rowLabel}${seat.seatNumber}, ${describeStatus(seat, isSelected)}, $${seat.price.toFixed(2)}`}
+                    aria-label={`Seat ${seat.rowLabel}${seat.seatNumber}, ${describeStatus(seat, isSelected)}, ₹${seat.price.toFixed(2)}`}
                     title={`${seat.rowLabel}${seat.seatNumber}`}
                   >
                     {symbol}

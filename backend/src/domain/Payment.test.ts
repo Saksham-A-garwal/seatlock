@@ -9,7 +9,7 @@ function makePayment(overrides: Partial<ConstructorParameters<typeof Payment>[0]
     userId: 1,
     showId: 1,
     seatIds: [1, 2],
-    stripePaymentIntentId: "pi_test_123",
+    razorpayOrderId: "order_test_123",
     amount: 500,
     ...overrides,
   });

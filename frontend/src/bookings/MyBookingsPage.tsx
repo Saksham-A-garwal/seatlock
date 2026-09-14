@@ -63,7 +63,7 @@ export function MyBookingsPage() {
               {booking.show.venue} · {new Date(booking.show.showtime).toLocaleString()}
             </p>
             <p className={styles.meta}>
-              Seats: {booking.seats.map((seat) => `${seat.rowLabel}${seat.seatNumber}`).join(", ")} · $
+              Seats: {booking.seats.map((seat) => `${seat.rowLabel}${seat.seatNumber}`).join(", ")} · ₹
               {booking.totalPrice.toFixed(2)}
             </p>
             <span className={`${styles.badge} ${styles[booking.status.toLowerCase()]}`}>{booking.status}</span>

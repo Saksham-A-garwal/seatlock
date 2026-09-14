@@ -6,7 +6,7 @@ import { FakeEmailSender } from "../auth/FakeEmailSender";
 import { issueTokenPair } from "../auth/tokens";
 import { prisma } from "../db/prisma";
 import { cleanupShow, cleanupUsers, createTestSeat, createTestShow, createTestUser } from "../seats/testHelpers";
-import { buildSignedWebhookPayload, makeStripeEventBody } from "./testHelpers";
+import { buildSignedWebhookPayload, makeRazorpayEventBody } from "./testHelpers";
 
 describe("payments routes", () => {
   const app = createApp({ emailSender: new FakeEmailSender() });
@@ -25,9 +25,9 @@ describe("payments routes", () => {
     userIds = [];
   });
 
-  describe("POST /payments/create-intent", () => {
+  describe("POST /payments/create-order", () => {
     it("rejects an unauthenticated request", async () => {
-      const res = await request(app).post("/payments/create-intent").send({ showId: 1, seatIds: [1] });
+      const res = await request(app).post("/payments/create-order").send({ showId: 1, seatIds: [1] });
       expect(res.status).toBe(401);
     });
 
@@ -37,7 +37,7 @@ describe("payments routes", () => {
       const { accessToken } = await issueTokenPair(user.id, user.role);
 
       const res = await request(app)
-        .post("/payments/create-intent")
+        .post("/payments/create-order")
         .set("Authorization", `Bearer ${accessToken}`)
         .send({ showId: 1, seatIds: [] });
 
@@ -53,7 +53,7 @@ describe("payments routes", () => {
       const { accessToken } = await issueTokenPair(user.id, user.role);
 
       const res = await request(app)
-        .post("/payments/create-intent")
+        .post("/payments/create-order")
         .set("Authorization", `Bearer ${accessToken}`)
         .send({ showId, seatIds: [seat.id] });
 
@@ -61,7 +61,7 @@ describe("payments routes", () => {
       expect(res.body.error.code).toBe("HOLD_NOT_VALID");
     });
 
-    it("creates a real payment intent for a validly held seat", async () => {
+    it("creates a real Razorpay order for a validly held seat", async () => {
       show = await createTestShow();
       const showId = show.id;
       const seat = await createTestSeat(showId, { price: 200 });
@@ -74,12 +74,13 @@ describe("payments routes", () => {
       });
 
       const res = await request(app)
-        .post("/payments/create-intent")
+        .post("/payments/create-order")
         .set("Authorization", `Bearer ${accessToken}`)
         .send({ showId, seatIds: [seat.id] });
 
       expect(res.status).toBe(200);
-      expect(res.body.clientSecret).toMatch(/^pi_/);
+      expect(res.body.orderId).toMatch(/^order_/);
+      expect(res.body.currency).toBe("INR");
       paymentIds.push(res.body.paymentId);
     });
   });
@@ -89,7 +90,7 @@ describe("payments routes", () => {
       const res = await request(app)
         .post("/payments/webhook")
         .set("Content-Type", "application/json")
-        .send(JSON.stringify({ id: "evt_test", type: "payment_intent.succeeded" }));
+        .send(JSON.stringify({ event: "payment.captured" }));
 
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe("MISSING_SIGNATURE");
@@ -99,15 +100,16 @@ describe("payments routes", () => {
       const res = await request(app)
         .post("/payments/webhook")
         .set("Content-Type", "application/json")
-        .set("Stripe-Signature", "t=1,v1=not-a-real-signature")
-        .send(JSON.stringify({ id: "evt_test", type: "payment_intent.succeeded" }));
+        .set("X-Razorpay-Signature", "not-a-real-signature")
+        .set("X-Razorpay-Event-Id", "evt_test")
+        .send(JSON.stringify({ event: "payment.captured" }));
 
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe("INVALID_SIGNATURE");
     });
 
     it(
-      "confirms a booking on a validly signed payment_intent.succeeded event, and processing the SAME event twice does not double-book",
+      "confirms a booking on a validly signed payment.captured event, and processing the SAME event twice does not double-book",
       async () => {
         show = await createTestShow();
         const showId = show.id;
@@ -120,31 +122,30 @@ describe("payments routes", () => {
           data: { status: SeatStatus.HELD, heldById: user.id, holdExpiresAt: new Date(Date.now() + 60_000) },
         });
 
-        const intentRes = await request(app)
-          .post("/payments/create-intent")
+        const orderRes = await request(app)
+          .post("/payments/create-order")
           .set("Authorization", `Bearer ${accessToken}`)
           .send({ showId, seatIds: [seat.id] });
-        paymentIds.push(intentRes.body.paymentId);
-        const payment = await prisma.payment.findUniqueOrThrow({ where: { id: intentRes.body.paymentId } });
+        paymentIds.push(orderRes.body.paymentId);
+        const payment = await prisma.payment.findUniqueOrThrow({ where: { id: orderRes.body.paymentId } });
 
-        const eventBody = makeStripeEventBody(
-          `evt_test_${Date.now()}`,
-          "payment_intent.succeeded",
-          payment.stripePaymentIntentId
-        );
+        const eventBody = makeRazorpayEventBody("payment.captured", "pay_test_1", payment.razorpayOrderId);
         const { payload, signature } = buildSignedWebhookPayload(eventBody);
+        const eventId = `evt_test_${Date.now()}`;
 
         const firstRes = await request(app)
           .post("/payments/webhook")
           .set("Content-Type", "application/json")
-          .set("Stripe-Signature", signature)
+          .set("X-Razorpay-Signature", signature)
+          .set("X-Razorpay-Event-Id", eventId)
           .send(payload);
         expect(firstRes.status).toBe(200);
 
         const secondRes = await request(app)
           .post("/payments/webhook")
           .set("Content-Type", "application/json")
-          .set("Stripe-Signature", signature)
+          .set("X-Razorpay-Signature", signature)
+          .set("X-Razorpay-Event-Id", eventId)
           .send(payload);
         expect(secondRes.status).toBe(200);
 
@@ -158,7 +159,7 @@ describe("payments routes", () => {
     );
 
     it(
-      "marks the payment FAILED on a validly signed payment_intent.payment_failed event, without touching the seat",
+      "marks the payment FAILED on a validly signed payment.failed event, without touching the seat",
       async () => {
         show = await createTestShow();
         const showId = show.id;
@@ -171,24 +172,21 @@ describe("payments routes", () => {
           data: { status: SeatStatus.HELD, heldById: user.id, holdExpiresAt: new Date(Date.now() + 60_000) },
         });
 
-        const intentRes = await request(app)
-          .post("/payments/create-intent")
+        const orderRes = await request(app)
+          .post("/payments/create-order")
           .set("Authorization", `Bearer ${accessToken}`)
           .send({ showId, seatIds: [seat.id] });
-        paymentIds.push(intentRes.body.paymentId);
-        const payment = await prisma.payment.findUniqueOrThrow({ where: { id: intentRes.body.paymentId } });
+        paymentIds.push(orderRes.body.paymentId);
+        const payment = await prisma.payment.findUniqueOrThrow({ where: { id: orderRes.body.paymentId } });
 
-        const eventBody = makeStripeEventBody(
-          `evt_test_${Date.now()}`,
-          "payment_intent.payment_failed",
-          payment.stripePaymentIntentId
-        );
+        const eventBody = makeRazorpayEventBody("payment.failed", "pay_test_2", payment.razorpayOrderId);
         const { payload, signature } = buildSignedWebhookPayload(eventBody);
 
         const res = await request(app)
           .post("/payments/webhook")
           .set("Content-Type", "application/json")
-          .set("Stripe-Signature", signature)
+          .set("X-Razorpay-Signature", signature)
+          .set("X-Razorpay-Event-Id", `evt_test_${Date.now()}`)
           .send(payload);
         expect(res.status).toBe(200);
 
@@ -220,18 +218,18 @@ describe("payments routes", () => {
         data: { status: SeatStatus.HELD, heldById: user.id, holdExpiresAt: new Date(Date.now() + 60_000) },
       });
 
-      const intentRes = await request(app)
-        .post("/payments/create-intent")
+      const orderRes = await request(app)
+        .post("/payments/create-order")
         .set("Authorization", `Bearer ${accessToken}`)
         .send({ showId, seatIds: [seat.id] });
-      paymentIds.push(intentRes.body.paymentId);
+      paymentIds.push(orderRes.body.paymentId);
 
       const res = await request(app)
-        .get(`/payments/${intentRes.body.paymentId}`)
+        .get(`/payments/${orderRes.body.paymentId}`)
         .set("Authorization", `Bearer ${accessToken}`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ id: intentRes.body.paymentId, status: "PENDING", bookingId: null });
+      expect(res.body).toEqual({ id: orderRes.body.paymentId, status: "PENDING", bookingId: null });
     });
 
     it("returns 404 for another user's payment", async () => {
@@ -247,14 +245,14 @@ describe("payments routes", () => {
         data: { status: SeatStatus.HELD, heldById: owner.id, holdExpiresAt: new Date(Date.now() + 60_000) },
       });
 
-      const intentRes = await request(app)
-        .post("/payments/create-intent")
+      const orderRes = await request(app)
+        .post("/payments/create-order")
         .set("Authorization", `Bearer ${ownerToken}`)
         .send({ showId, seatIds: [seat.id] });
-      paymentIds.push(intentRes.body.paymentId);
+      paymentIds.push(orderRes.body.paymentId);
 
       const res = await request(app)
-        .get(`/payments/${intentRes.body.paymentId}`)
+        .get(`/payments/${orderRes.body.paymentId}`)
         .set("Authorization", `Bearer ${attackerToken}`);
 
       expect(res.status).toBe(404);

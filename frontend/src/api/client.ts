@@ -30,7 +30,25 @@ export function setSessionExpiredHandler(handler: (() => void) | null): void {
 
 // Uses the httpOnly cookie (sent automatically via credentials: "include")
 // to obtain a fresh access token. Returns null if there's no valid session.
-export async function refreshAccessToken(): Promise<string | null> {
+//
+// The refresh token is single-use server-side (rotated on every call), so
+// if two requests 401 around the same moment and each independently called
+// this, the second would present an already-rotated token and fail --
+// logging the user out even though the first call just renewed the session.
+// inFlightRefresh makes every concurrent caller share the one real request
+// instead, so only one POST /auth/refresh is ever sent at a time.
+let inFlightRefresh: Promise<string | null> | null = null;
+
+export function refreshAccessToken(): Promise<string | null> {
+  if (!inFlightRefresh) {
+    inFlightRefresh = doRefresh().finally(() => {
+      inFlightRefresh = null;
+    });
+  }
+  return inFlightRefresh;
+}
+
+async function doRefresh(): Promise<string | null> {
   const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
     method: "POST",
     credentials: "include",
@@ -156,11 +174,11 @@ export function holdSeats(showId: number, seatIds: number[]): Promise<{ seats: H
   return request(`/shows/${showId}/hold`, { method: "POST", body: { seatIds } });
 }
 
-export function createPaymentIntent(
+export function createOrder(
   showId: number,
   seatIds: number[]
-): Promise<{ clientSecret: string; paymentId: number }> {
-  return request("/payments/create-intent", { method: "POST", body: { showId, seatIds } });
+): Promise<{ orderId: string; paymentId: number; amount: number; currency: string; keyId: string }> {
+  return request("/payments/create-order", { method: "POST", body: { showId, seatIds } });
 }
 
 export interface PaymentStatusDto {

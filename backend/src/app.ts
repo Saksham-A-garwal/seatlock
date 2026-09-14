@@ -26,7 +26,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
   const seatRepository = new SeatRepository();
   const paymentService = new PaymentService(seatRepository);
 
-  // Must be mounted BEFORE express.json(): Stripe's webhook signature check
+  // Must be mounted BEFORE express.json(): Razorpay's webhook signature check
   // needs the raw, unparsed request body.
   app.use(createPaymentsWebhookRouter(paymentService));
 

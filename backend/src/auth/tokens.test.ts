@@ -54,6 +54,18 @@ describe("tokens", () => {
     await expect(rotateRefreshToken("not-a-real-refresh-token")).rejects.toThrow(AuthTokenError);
   });
 
+  it("rotating the same token twice, genuinely concurrently, lets exactly one call win", async () => {
+    const { refreshToken } = await issueTokenPair(user.id, user.role);
+
+    const results = await Promise.allSettled([rotateRefreshToken(refreshToken), rotateRefreshToken(refreshToken)]);
+
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(AuthTokenError);
+  });
+
   it("rejects an expired refresh token", async () => {
     const { refreshToken } = await issueTokenPair(user.id, user.role);
     const tokenHash = crypto.createHash("sha256").update(refreshToken).digest("hex");

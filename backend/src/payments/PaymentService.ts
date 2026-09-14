@@ -1,35 +1,36 @@
-import Stripe from "stripe";
+import Razorpay from "razorpay";
 import { BookingStatus, PaymentStatus, SeatStatus } from "@prisma/client";
 import { prisma } from "../db/prisma";
 import { config } from "../config";
 import { isRetryableDbError } from "../resilience/isRetryableDbError";
-import { isRetryableStripeError } from "../resilience/isRetryableStripeError";
+import { isRetryableRazorpayError } from "../resilience/isRetryableRazorpayError";
 import { withRetry } from "../resilience/withRetry";
 import { Payment } from "../domain/Payment";
 import { SeatRepository } from "../seats/SeatRepository";
 import { SeatNotFoundError } from "../seats/errors";
 import { HoldNotValidError } from "./errors";
-import { stripeClient } from "./stripeClient";
+import { razorpayClient } from "./razorpayClient";
 
-function dollarsToCents(amount: number): number {
+// Razorpay amounts are in the smallest currency unit -- paise, not rupees.
+function rupeesToPaise(amount: number): number {
   return Math.round(amount * 100);
 }
 
 export class PaymentService {
   constructor(
     private readonly seatRepository: SeatRepository,
-    private readonly stripe: Stripe = stripeClient
+    private readonly razorpay: Razorpay = razorpayClient
   ) {}
 
-  // Plain (non-locking) read: this step calls out to Stripe, and a Postgres
-  // row lock must never be held open across an external network call. This
-  // is a best-effort UX check, not the authoritative one -- that happens in
-  // confirmPayment, locked, once the webhook actually arrives.
-  async createPaymentIntent(
+  // Plain (non-locking) read: this step calls out to Razorpay, and a
+  // Postgres row lock must never be held open across an external network
+  // call. This is a best-effort UX check, not the authoritative one -- that
+  // happens in confirmPayment, locked, once the webhook actually arrives.
+  async createOrder(
     showId: number,
     seatIds: number[],
     userId: number
-  ): Promise<{ clientSecret: string; paymentId: number }> {
+  ): Promise<{ orderId: string; paymentId: number; amount: number; currency: string; keyId: string }> {
     const uniqueSeatIds = [...new Set(seatIds)];
     const seats = await this.seatRepository.findByShow(showId);
     const seatsById = new Map(seats.map((seat) => [seat.id, seat]));
@@ -53,15 +54,14 @@ export class PaymentService {
 
     const amount = requestedSeats.reduce((sum, seat) => sum + seat!.price, 0);
 
-    const intent = await withRetry(
+    const order = await withRetry(
       () =>
-        this.stripe.paymentIntents.create({
-          amount: dollarsToCents(amount),
-          currency: "usd",
-          payment_method_types: ["card"],
-          metadata: { userId: String(userId), showId: String(showId), seatIds: uniqueSeatIds.join(",") },
+        this.razorpay.orders.create({
+          amount: rupeesToPaise(amount),
+          currency: "INR",
+          notes: { userId: String(userId), showId: String(showId), seatIds: uniqueSeatIds.join(",") },
         }),
-      { ...config.resilience, isRetryable: isRetryableStripeError }
+      { ...config.resilience, isRetryable: isRetryableRazorpayError }
     );
 
     const payment = await prisma.payment.create({
@@ -69,20 +69,20 @@ export class PaymentService {
         userId,
         showId,
         seatIds: uniqueSeatIds,
-        stripePaymentIntentId: intent.id,
+        razorpayOrderId: order.id,
         amount,
         status: PaymentStatus.PENDING,
       },
     });
 
-    return { clientSecret: intent.client_secret as string, paymentId: payment.id };
+    return { orderId: order.id, paymentId: payment.id, amount, currency: "INR", keyId: config.razorpay.keyId };
   }
 
-  // Called once a verified `payment_intent.succeeded` webhook event arrives.
-  async confirmPayment(stripePaymentIntentId: string): Promise<void> {
-    const paymentRow = await prisma.payment.findUnique({ where: { stripePaymentIntentId } });
+  // Called once a verified `payment.captured` webhook event arrives.
+  async confirmPayment(razorpayOrderId: string, razorpayPaymentId: string): Promise<void> {
+    const paymentRow = await prisma.payment.findUnique({ where: { razorpayOrderId } });
     if (!paymentRow) {
-      console.error(`Webhook confirmed an unknown payment intent: ${stripePaymentIntentId}`);
+      console.error(`Webhook confirmed an unknown order: ${razorpayOrderId}`);
       return;
     }
     if (paymentRow.status !== PaymentStatus.PENDING) {
@@ -111,10 +111,13 @@ export class PaymentService {
           if (!holdSurvived) {
             // The race case (SRS edge cases): payment succeeded, but the
             // hold didn't survive. Decision: refund-and-notify, not a grace
-            // period -- see design notes. The actual Stripe refund call
+            // period -- see design notes. The actual Razorpay refund call
             // happens after this transaction commits, never inside it.
             payment.markFailed();
-            await tx.payment.update({ where: { id: paymentRow.id }, data: { status: payment.status } });
+            await tx.payment.update({
+              where: { id: paymentRow.id },
+              data: { status: payment.status, razorpayPaymentId },
+            });
             return true;
           }
 
@@ -137,7 +140,7 @@ export class PaymentService {
           payment.markSucceeded(booking.id);
           await tx.payment.update({
             where: { id: paymentRow.id },
-            data: { status: payment.status, bookingId: payment.bookingId },
+            data: { status: payment.status, bookingId: payment.bookingId, razorpayPaymentId },
           });
 
           return false;
@@ -146,19 +149,19 @@ export class PaymentService {
     );
 
     if (needsRefund) {
-      await withRetry(() => this.stripe.refunds.create({ payment_intent: stripePaymentIntentId }), {
-        ...config.resilience,
-        isRetryable: isRetryableStripeError,
-      });
+      await withRetry(
+        () => this.razorpay.payments.refund(razorpayPaymentId, { amount: rupeesToPaise(paymentRow.amount.toNumber()) }),
+        { ...config.resilience, isRetryable: isRetryableRazorpayError }
+      );
       console.error(
-        `Refunded payment ${stripePaymentIntentId}: hold expired before webhook confirmation arrived (race case, see SRS edge cases).`
+        `Refunded payment ${razorpayPaymentId}: hold expired before webhook confirmation arrived (race case, see SRS edge cases).`
       );
     }
   }
 
-  // Called on a verified `payment_intent.payment_failed` webhook event.
-  async markPaymentFailed(stripePaymentIntentId: string): Promise<void> {
-    const paymentRow = await prisma.payment.findUnique({ where: { stripePaymentIntentId } });
+  // Called on a verified `payment.failed` webhook event.
+  async markPaymentFailed(razorpayOrderId: string, razorpayPaymentId?: string): Promise<void> {
+    const paymentRow = await prisma.payment.findUnique({ where: { razorpayOrderId } });
     if (!paymentRow || paymentRow.status !== PaymentStatus.PENDING) {
       return;
     }
@@ -168,6 +171,9 @@ export class PaymentService {
     // their seat selection -- only the Payment row itself changes.
     const payment = new Payment({ ...paymentRow, amount: paymentRow.amount.toNumber() });
     payment.markFailed();
-    await prisma.payment.update({ where: { id: paymentRow.id }, data: { status: payment.status } });
+    await prisma.payment.update({
+      where: { id: paymentRow.id },
+      data: { status: payment.status, ...(razorpayPaymentId ? { razorpayPaymentId } : {}) },
+    });
   }
 }

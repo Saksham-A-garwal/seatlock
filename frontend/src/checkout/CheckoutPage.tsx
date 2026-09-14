@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Elements } from "@stripe/react-stripe-js";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ApiError, createPaymentIntent, getPaymentStatus, type HeldSeat } from "../api/client";
+import { ApiError, createOrder, getPaymentStatus, type HeldSeat } from "../api/client";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { PageSpinner } from "../components/PageSpinner";
 import { PaymentForm } from "./PaymentForm";
-import { stripePromise } from "./stripe";
 import styles from "./CheckoutPage.module.css";
 
 interface LocationState {
@@ -15,7 +13,7 @@ interface LocationState {
 
 type Phase =
   | { name: "loadingIntent" }
-  | { name: "paying"; clientSecret: string; paymentId: number }
+  | { name: "paying"; orderId: string; paymentId: number; amount: number; currency: string; keyId: string }
   | { name: "confirming" }
   | { name: "confirmed"; bookingId: number }
   | { name: "declined"; message: string }
@@ -47,19 +45,26 @@ export function CheckoutPage() {
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Guards against StrictMode's dev-only double-invocation of mount effects
-  // -- harmless for a GET, but this creates a real Stripe PaymentIntent
-  // (and a Payment row) each time, so it shouldn't fire twice.
+  // -- harmless for a GET, but this creates a real Razorpay order (and a
+  // Payment row) each time, so it shouldn't fire twice.
   const hasStartedRef = useRef(false);
 
   const startPaymentIntent = useCallback(async () => {
     if (!state) return;
     setPhase({ name: "loadingIntent" });
     try {
-      const result = await createPaymentIntent(
+      const result = await createOrder(
         showId,
         state.seats.map((seat) => seat.id)
       );
-      setPhase({ name: "paying", clientSecret: result.clientSecret, paymentId: result.paymentId });
+      setPhase({
+        name: "paying",
+        orderId: result.orderId,
+        paymentId: result.paymentId,
+        amount: result.amount,
+        currency: result.currency,
+        keyId: result.keyId,
+      });
     } catch (err) {
       setPhase({
         name: "error",
@@ -104,9 +109,9 @@ export function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, phase.name, showId]);
 
-  // Polls for the webhook to land once Stripe has confirmed the charge
-  // client-side. Distinguishing a simple decline from the rare
-  // hold-expired-and-refunded race doesn't need a backend flag: Stripe
+  // Polls for the webhook to land once Razorpay's Checkout has reported
+  // success client-side. Distinguishing a simple decline from the rare
+  // hold-expired-and-refunded race doesn't need a backend flag: Razorpay
   // itself already told us the charge succeeded, so if our own backend
   // later reports FAILED, that combination IS the race case.
   function startConfirming(paymentId: number) {
@@ -166,7 +171,7 @@ export function CheckoutPage() {
           Seats: <strong>{seatLabels}</strong>
         </p>
         <p>
-          Total: <strong>${total.toFixed(2)}</strong>
+          Total: <strong>₹{total.toFixed(2)}</strong>
         </p>
         {(phase.name === "loadingIntent" || phase.name === "paying") && (
           <p className={styles.countdown}>Complete booking in {formatCountdown(remainingSeconds)}</p>
@@ -176,12 +181,14 @@ export function CheckoutPage() {
       {phase.name === "loadingIntent" && <PageSpinner label="Preparing payment…" />}
 
       {phase.name === "paying" && (
-        <Elements stripe={stripePromise} options={{ clientSecret: phase.clientSecret }}>
-          <PaymentForm
-            onSucceeded={() => startConfirming(phase.paymentId)}
-            onDeclined={(message) => setPhase({ name: "declined", message })}
-          />
-        </Elements>
+        <PaymentForm
+          orderId={phase.orderId}
+          amount={phase.amount}
+          currency={phase.currency}
+          keyId={phase.keyId}
+          onSucceeded={() => startConfirming(phase.paymentId)}
+          onDeclined={(message) => setPhase({ name: "declined", message })}
+        />
       )}
 
       {phase.name === "confirming" && <PageSpinner label="Confirming your booking…" />}

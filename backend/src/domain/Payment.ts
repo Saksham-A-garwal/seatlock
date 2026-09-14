@@ -6,7 +6,7 @@ interface PaymentData {
   userId: number;
   showId: number;
   seatIds: number[];
-  stripePaymentIntentId: string;
+  razorpayOrderId: string;
   amount: number;
   status?: PaymentStatus;
   bookingId?: number | null;
@@ -17,7 +17,7 @@ export class Payment {
   readonly userId: number;
   readonly showId: number;
   readonly seatIds: number[];
-  readonly stripePaymentIntentId: string;
+  readonly razorpayOrderId: string;
   readonly amount: number;
   status: PaymentStatus;
   bookingId: number | null;
@@ -27,7 +27,7 @@ export class Payment {
     this.userId = data.userId;
     this.showId = data.showId;
     this.seatIds = data.seatIds;
-    this.stripePaymentIntentId = data.stripePaymentIntentId;
+    this.razorpayOrderId = data.razorpayOrderId;
     this.amount = data.amount;
     this.status = data.status ?? PaymentStatus.PENDING;
     this.bookingId = data.bookingId ?? null;

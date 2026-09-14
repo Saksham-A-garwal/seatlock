@@ -1,5 +1,5 @@
 import express, { Router } from "express";
-import Stripe from "stripe";
+import Razorpay from "razorpay";
 import { Prisma } from "@prisma/client";
 import { requireAuth } from "../auth/middleware";
 import { asyncHandler } from "../utils/asyncHandler";
@@ -12,10 +12,23 @@ import { SeatNotFoundError } from "../seats/errors";
 import { parsePositiveInt } from "../utils/parsePositiveInt";
 import { HoldNotValidError } from "./errors";
 import { PaymentService } from "./PaymentService";
-import { stripeClient } from "./stripeClient";
 
-// Mounted BEFORE the app's global express.json(): Stripe's signature check
-// needs the exact original request bytes, which express.json() would
+// The shape of the body Razorpay POSTs to a configured webhook URL. Only the
+// fields this app actually reads -- see docs.razorpay.com/webhooks/payloads/payments.
+interface RazorpayWebhookBody {
+  event: string;
+  payload?: {
+    payment?: {
+      entity?: {
+        id: string;
+        order_id: string;
+      };
+    };
+  };
+}
+
+// Mounted BEFORE the app's global express.json(): Razorpay's signature
+// check needs the exact original request bytes, which express.json() would
 // otherwise have already parsed away.
 export function createPaymentsWebhookRouter(paymentService: PaymentService): Router {
   const router = Router();
@@ -24,27 +37,51 @@ export function createPaymentsWebhookRouter(paymentService: PaymentService): Rou
     "/payments/webhook",
     express.raw({ type: "application/json" }),
     asyncHandler(async (req, res) => {
-      const signature = req.headers["stripe-signature"];
-      if (typeof signature !== "string") {
-        res.status(400).json({ error: { code: "MISSING_SIGNATURE", message: "Missing Stripe-Signature header" } });
+      // Logged unconditionally, before any validation: if this line never
+      // shows up in the server's own console for a payment you just made,
+      // the request never reached this process at all -- the problem is
+      // upstream (ngrok/tunnel down, or the wrong URL saved in the Razorpay
+      // Dashboard), not this handler's logic.
+      console.log(`[webhook] POST /payments/webhook received, event id ${req.headers["x-razorpay-event-id"]}`);
+
+      const signature = req.headers["x-razorpay-signature"];
+      const eventId = req.headers["x-razorpay-event-id"];
+      if (typeof signature !== "string" || typeof eventId !== "string") {
+        console.warn("[webhook] rejected: missing X-Razorpay-Signature or X-Razorpay-Event-Id header");
+        res.status(400).json({
+          error: { code: "MISSING_SIGNATURE", message: "Missing X-Razorpay-Signature or X-Razorpay-Event-Id header" },
+        });
         return;
       }
 
-      let event: Stripe.Event;
+      const rawBody = (req.body as Buffer).toString("utf8");
+      let signatureValid: boolean;
       try {
-        event = stripeClient.webhooks.constructEvent(req.body as Buffer, signature, config.stripeWebhookSecret);
+        signatureValid = Razorpay.validateWebhookSignature(rawBody, signature, config.razorpay.webhookSecret);
       } catch {
+        signatureValid = false;
+      }
+      if (!signatureValid) {
+        console.warn("[webhook] rejected: signature did not verify against RAZORPAY_WEBHOOK_SECRET");
         res
           .status(400)
           .json({ error: { code: "INVALID_SIGNATURE", message: "Webhook signature verification failed" } });
         return;
       }
 
+      let body: RazorpayWebhookBody;
       try {
-        // Insert-if-not-exists on the Stripe event ID -- this IS the
-        // idempotency mechanism. A duplicate delivery hits the unique
-        // constraint and is acknowledged without reprocessing.
-        await prisma.webhookEvent.create({ data: { id: event.id, type: event.type } });
+        body = JSON.parse(rawBody) as RazorpayWebhookBody;
+      } catch {
+        res.status(400).json({ error: { code: "INVALID_BODY", message: "Malformed webhook payload" } });
+        return;
+      }
+
+      try {
+        // Insert-if-not-exists on Razorpay's own per-delivery event ID --
+        // this IS the idempotency mechanism. A duplicate delivery hits the
+        // unique constraint and is acknowledged without reprocessing.
+        await prisma.webhookEvent.create({ data: { id: eventId, type: body.event } });
       } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
           res.status(200).json({ received: true });
@@ -53,12 +90,14 @@ export function createPaymentsWebhookRouter(paymentService: PaymentService): Rou
         throw error;
       }
 
-      if (event.type === "payment_intent.succeeded") {
-        const intent = event.data.object as Stripe.PaymentIntent;
-        await paymentService.confirmPayment(intent.id);
-      } else if (event.type === "payment_intent.payment_failed") {
-        const intent = event.data.object as Stripe.PaymentIntent;
-        await paymentService.markPaymentFailed(intent.id);
+      const paymentEntity = body.payload?.payment?.entity;
+      console.log(`[webhook] verified, event=${body.event}, order=${paymentEntity?.order_id ?? "n/a"}`);
+      if (paymentEntity) {
+        if (body.event === "payment.captured") {
+          await paymentService.confirmPayment(paymentEntity.order_id, paymentEntity.id);
+        } else if (body.event === "payment.failed") {
+          await paymentService.markPaymentFailed(paymentEntity.order_id, paymentEntity.id);
+        }
       }
       // Any other event type: acknowledged, not acted on.
 
@@ -74,16 +113,16 @@ export function createPaymentsWebhookRouter(paymentService: PaymentService): Rou
 export function createPaymentsRouter(paymentService: PaymentService): Router {
   const router = Router();
   const rateLimiter = new RateLimiter(redisClient);
-  const createIntentLimit = {
+  const createOrderLimit = {
     keyPrefix: "payment-intent",
     windowSeconds: 60,
     max: config.rateLimits.paymentIntentPerUserPerMinute,
   };
 
   router.post(
-    "/payments/create-intent",
+    "/payments/create-order",
     requireAuth,
-    rateLimitByUser(rateLimiter, createIntentLimit),
+    rateLimitByUser(rateLimiter, createOrderLimit),
     asyncHandler(async (req, res) => {
       const { showId, seatIds } = req.body as { showId?: unknown; seatIds?: unknown };
 
@@ -104,7 +143,7 @@ export function createPaymentsRouter(paymentService: PaymentService): Router {
       }
 
       try {
-        const result = await paymentService.createPaymentIntent(parsedShowId, seatIds as number[], req.auth!.id);
+        const result = await paymentService.createOrder(parsedShowId, seatIds as number[], req.auth!.id);
         res.status(200).json(result);
       } catch (error) {
         if (error instanceof HoldNotValidError) {

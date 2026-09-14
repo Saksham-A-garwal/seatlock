@@ -120,7 +120,7 @@ export function ShowDetailPage() {
       <div className={styles.summaryBar}>
         <div>
           <strong>{selectedSeats.length}</strong> seat{selectedSeats.length === 1 ? "" : "s"} selected
-          {selectedSeats.length > 0 && <span className={styles.total}> · ${total.toFixed(2)}</span>}
+          {selectedSeats.length > 0 && <span className={styles.total}> · ₹{total.toFixed(2)}</span>}
         </div>
         <button
           type="button"

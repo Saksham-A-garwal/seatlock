@@ -129,18 +129,19 @@ model OtpCode {
 }
 
 model Payment {
-  id                    Int           @id @default(autoincrement())
-  userId                Int
-  user                  User          @relation(fields: [userId], references: [id])
-  showId                Int
-  show                  Show          @relation(fields: [showId], references: [id])
-  seatIds               Int[]
-  stripePaymentIntentId String        @unique
-  amount                Decimal       @db.Decimal(10, 2)
-  status                PaymentStatus @default(PENDING)
-  bookingId             Int?          @unique
-  booking               Booking?      @relation(fields: [bookingId], references: [id])
-  createdAt             DateTime      @default(now())
+  id                Int           @id @default(autoincrement())
+  userId            Int
+  user              User          @relation(fields: [userId], references: [id])
+  showId            Int
+  show              Show          @relation(fields: [showId], references: [id])
+  seatIds           Int[]
+  razorpayOrderId   String        @unique
+  razorpayPaymentId String?
+  amount            Decimal       @db.Decimal(10, 2)
+  status            PaymentStatus @default(PENDING)
+  bookingId         Int?          @unique
+  booking           Booking?      @relation(fields: [bookingId], references: [id])
+  createdAt         DateTime      @default(now())
 
   @@index([userId])
 }

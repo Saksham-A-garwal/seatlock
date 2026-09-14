@@ -102,7 +102,7 @@ export function CreateShowPage() {
               />
             </div>
             <div>
-              <label htmlFor="basePrice">Base price ($)</label>
+              <label htmlFor="basePrice">Base price (₹)</label>
               <input
                 id="basePrice"
                 type="number"

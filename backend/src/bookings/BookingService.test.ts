@@ -88,7 +88,7 @@ describe("BookingService", () => {
           userId: user.id,
           showId,
           seatIds: [seat.id],
-          stripePaymentIntentId: `pi_test_${Date.now()}`,
+          razorpayOrderId: `order_test_${Date.now()}`,
           amount: 500,
           status: PaymentStatus.SUCCEEDED,
           bookingId: booking.id,
