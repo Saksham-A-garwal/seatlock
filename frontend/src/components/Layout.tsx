@@ -28,9 +28,17 @@ export function Layout() {
               </NavLink>
             )}
             {user?.role === "ADMIN" && (
-              <NavLink to="/admin/shows/new" className={({ isActive }) => (isActive ? styles.activeLink : undefined)}>
-                New Show
-              </NavLink>
+              <>
+                <NavLink to="/admin" end className={({ isActive }) => (isActive ? styles.activeLink : undefined)}>
+                  Dashboard
+                </NavLink>
+                <NavLink
+                  to="/admin/shows/new"
+                  className={({ isActive }) => (isActive ? styles.activeLink : undefined)}
+                >
+                  New Show
+                </NavLink>
+              </>
             )}
           </nav>
           <div className={styles.account}>

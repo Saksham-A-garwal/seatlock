@@ -209,3 +209,47 @@ export function createShow(
 ): Promise<{ show: ShowDetail & { rows: number; columns: number }; seatsCreated: number }> {
   return request("/shows", { method: "POST", body: input });
 }
+
+export interface AdminStats {
+  totalShows: number;
+  totalUsers: number;
+  totalBookings: number;
+  confirmedBookings: number;
+  totalRevenue: number;
+}
+
+export function getAdminStats(): Promise<AdminStats> {
+  return request("/admin/stats");
+}
+
+export interface AdminShowSummary {
+  id: number;
+  movieName: string;
+  venue: string;
+  showtime: string;
+  posterUrl: string | null;
+  totalSeats: number;
+  availableSeats: number;
+  bookedSeats: number;
+  revenue: number;
+}
+
+export function getAdminShows(): Promise<{ shows: AdminShowSummary[] }> {
+  return request("/admin/shows");
+}
+
+export interface AdminBookingDto {
+  id: number;
+  status: "PENDING" | "CONFIRMED" | "CANCELLED";
+  totalPrice: number;
+  createdAt: string;
+  confirmedAt: string | null;
+  cancelledAt: string | null;
+  user: { id: number; email: string };
+  show: ShowDetail;
+  seats: { rowLabel: string; seatNumber: number }[];
+}
+
+export function getAdminBookings(status?: AdminBookingDto["status"]): Promise<{ bookings: AdminBookingDto[] }> {
+  return request(`/admin/bookings${status ? `?status=${status}` : ""}`);
+}

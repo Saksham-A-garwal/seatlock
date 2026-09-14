@@ -8,6 +8,7 @@ import { ShowDetailPage } from "./shows/ShowDetailPage";
 import { CheckoutPage } from "./checkout/CheckoutPage";
 import { MyBookingsPage } from "./bookings/MyBookingsPage";
 import { CreateShowPage } from "./admin/CreateShowPage";
+import { AdminDashboardPage } from "./admin/AdminDashboardPage";
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
         </Route>
 
         <Route element={<RequireAdmin />}>
+          <Route path="/admin" element={<AdminDashboardPage />} />
           <Route path="/admin/shows/new" element={<CreateShowPage />} />
         </Route>
       </Route>
