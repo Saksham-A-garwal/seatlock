@@ -13,6 +13,11 @@ import { SeatRepository } from "./SeatRepository";
 import { ShowService } from "./ShowService";
 import { InvalidShowInputError, SeatNotFoundError } from "./errors";
 
+// Same spirit as the rows/columns caps in ShowService: a deliberate, simple
+// bound rather than something configurable, matching how BookMyShow and
+// similar sites also cap seats-per-booking at a small fixed number.
+const MAX_SEATS_PER_HOLD = 10;
+
 export function createSeatsRouter(): Router {
   const router = Router();
   const seatRepository = new SeatRepository();
@@ -169,6 +174,12 @@ export function createSeatsRouter(): Router {
       ) {
         res.status(400).json({
           error: { code: "INVALID_SEAT_IDS", message: "seatIds must be a non-empty array of positive integers" },
+        });
+        return;
+      }
+      if (seatIds.length > MAX_SEATS_PER_HOLD) {
+        res.status(400).json({
+          error: { code: "TOO_MANY_SEATS", message: `You can hold at most ${MAX_SEATS_PER_HOLD} seats at a time` },
         });
         return;
       }

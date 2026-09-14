@@ -173,6 +173,25 @@ describe("seats routes", () => {
       expect(res.body.error.code).toBe("INVALID_SEAT_IDS");
     });
 
+    it("rejects a hold request for more than 10 seats", async () => {
+      show = await createTestShow();
+      const showId = show.id;
+      const user = await createTestUser();
+      userIds = [user.id];
+      const { accessToken } = await issueTokenPair(user.id, user.role);
+      const seats = await Promise.all(
+        Array.from({ length: 11 }, (_, i) => createTestSeat(showId, { seatNumber: i + 1 }))
+      );
+
+      const res = await request(app)
+        .post(`/shows/${showId}/hold`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ seatIds: seats.map((seat) => seat.id) });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("TOO_MANY_SEATS");
+    });
+
     it("holds a real available seat successfully", async () => {
       show = await createTestShow();
       const showId = show.id;
