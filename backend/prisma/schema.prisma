@@ -109,11 +109,20 @@ model RefreshToken {
   userId    Int
   user      User      @relation(fields: [userId], references: [id])
   tokenHash String    @unique
+  // Every token minted from one login (and every token it's rotated into,
+  // and the one after that, ...) shares this id. It's what lets a reused
+  // token take down the whole chain, not just itself -- see tokens.ts.
+  familyId  String
   expiresAt DateTime
   usedAt    DateTime?
+  // Distinct from usedAt: set only when reuse-detection kills this token's
+  // whole family. usedAt means "legitimately rotated forward"; revokedAt
+  // means "invalidated because an old token in this family came back".
+  revokedAt DateTime?
   createdAt DateTime  @default(now())
 
   @@index([userId])
+  @@index([familyId])
 }
 
 model OtpCode {
