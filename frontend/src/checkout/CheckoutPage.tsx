@@ -44,6 +44,17 @@ export function CheckoutPage() {
   const [phase, setPhase] = useState<Phase>({ name: "loadingIntent" });
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Read only from the unmount-release effect below, via a ref rather than
+  // a dependency, specifically so that effect's cleanup runs ONLY on a true
+  // unmount -- not on every phase change (which putting `phase` in that
+  // effect's own deps would cause, incorrectly releasing the hold at the
+  // exact moment a payment succeeds and the phase moves to "confirming").
+  const phaseRef = useRef<Phase>(phase);
+  // Guards against releasing twice: handleCancelled already releases before
+  // navigating away, and that navigation then unmounts this page too --
+  // without this, the unmount-release effect below would fire a second,
+  // redundant releaseHold call right behind it.
+  const hasReleasedRef = useRef(false);
   // Guards against StrictMode's dev-only double-invocation of mount effects
   // -- harmless for a GET, but this creates a real Razorpay order (and a
   // Payment row) each time, so it shouldn't fire twice.
@@ -155,12 +166,64 @@ export function CheckoutPage() {
     };
   }, []);
 
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+
+  // Covers the abandonment path handleCancelled doesn't: leaving this page
+  // (back button, a nav link, closing the tab) without ever opening the
+  // Razorpay widget at all. Without this, that hold just sits there until
+  // its TTL expires naturally, instead of being freed immediately like a
+  // dismissed widget already is.
+  //
+  // Only safe to fire from phases where nothing is actually in flight --
+  // "confirming"/"confirmTimeout" mean a real payment may still land via
+  // the webhook any moment; releasing the hold out from under that would
+  // make confirmPayment think the hold didn't survive and wrongly refund a
+  // payment that was actually about to succeed. "confirmed"/"holdExpiredRace"
+  // are already resolved one way or the other -- nothing to release.
+  //
+  // The setTimeout deferral is required, not decorative: React StrictMode
+  // (dev only) deliberately mounts every component twice -- effect, cleanup,
+  // effect again, all synchronously in the same tick -- specifically to
+  // surface bugs like this one. Without deferring, this cleanup fired on
+  // that FAKE unmount while still "loadingIntent", releasing the seat out
+  // from under the real createOrder call in flight and turning every
+  // checkout in dev into an immediate 410. Deferring by a tick lets a
+  // StrictMode remount (synchronous, same tick) flip mountedRef back to
+  // true before the check runs, so only a genuine unmount reaches release.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      setTimeout(() => {
+        if (mountedRef.current) return;
+        const safeToRelease = (["loadingIntent", "paying", "declined", "error"] as Phase["name"][]).includes(
+          phaseRef.current.name
+        );
+        if (safeToRelease && state && !hasReleasedRef.current) {
+          hasReleasedRef.current = true;
+          releaseHold(
+            showId,
+            state.seats.map((seat) => seat.id)
+          ).catch(() => {
+            // Best-effort, same reasoning as handleCancelled: the hold's own
+            // TTL still reclaims the seat if this fails.
+          });
+        }
+      }, 0);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Fires when the user closes the payment widget without paying (not on a
   // decline -- that keeps the hold so they can retry with another card).
   // Releases the seats immediately rather than making them, and everyone
   // else, wait out the hold's TTL for a cancellation that already happened.
   function handleCancelled() {
     if (!state) return;
+    hasReleasedRef.current = true;
     releaseHold(
       showId,
       state.seats.map((seat) => seat.id)
