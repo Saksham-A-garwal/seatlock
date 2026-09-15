@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ApiError, createOrder, getPaymentStatus, type HeldSeat } from "../api/client";
+import { ApiError, createOrder, getPaymentStatus, releaseHold, type HeldSeat } from "../api/client";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { PageSpinner } from "../components/PageSpinner";
 import { PaymentForm } from "./PaymentForm";
@@ -155,6 +155,25 @@ export function CheckoutPage() {
     };
   }, []);
 
+  // Fires when the user closes the payment widget without paying (not on a
+  // decline -- that keeps the hold so they can retry with another card).
+  // Releases the seats immediately rather than making them, and everyone
+  // else, wait out the hold's TTL for a cancellation that already happened.
+  function handleCancelled() {
+    if (!state) return;
+    releaseHold(
+      showId,
+      state.seats.map((seat) => seat.id)
+    ).catch(() => {
+      // Best-effort: if this fails, the hold's own TTL still reclaims the
+      // seat -- this is an optimization, not the only path to release.
+    });
+    navigate(`/shows/${showId}`, {
+      replace: true,
+      state: { message: "Checkout cancelled — your held seats were released." },
+    });
+  }
+
   if (!state) {
     return <PageSpinner />;
   }
@@ -188,6 +207,7 @@ export function CheckoutPage() {
           keyId={phase.keyId}
           onSucceeded={() => startConfirming(phase.paymentId)}
           onDeclined={(message) => setPhase({ name: "declined", message })}
+          onCancelled={handleCancelled}
         />
       )}
 

@@ -246,4 +246,76 @@ describe("seats routes", () => {
       20_000
     );
   });
+
+  describe("POST /shows/:id/release", () => {
+    it("rejects an unauthenticated request", async () => {
+      const res = await request(app).post("/shows/1/release").send({ seatIds: [1] });
+      expect(res.status).toBe(401);
+    });
+
+    it("rejects an empty seatIds array", async () => {
+      show = await createTestShow();
+      const showId = show.id;
+      const user = await createTestUser();
+      userIds = [user.id];
+      const { accessToken } = await issueTokenPair(user.id, user.role);
+
+      const res = await request(app)
+        .post(`/shows/${showId}/release`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ seatIds: [] });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("INVALID_SEAT_IDS");
+    });
+
+    it("releases a seat the caller holds back to available", async () => {
+      show = await createTestShow();
+      const showId = show.id;
+      const seat = await createTestSeat(showId);
+      const user = await createTestUser();
+      userIds = [user.id];
+      const { accessToken } = await issueTokenPair(user.id, user.role);
+      await request(app)
+        .post(`/shows/${showId}/hold`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ seatIds: [seat.id] });
+
+      const res = await request(app)
+        .post(`/shows/${showId}/release`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ seatIds: [seat.id] });
+
+      expect(res.status).toBe(200);
+      const dbSeat = await prisma.seat.findUnique({ where: { id: seat.id } });
+      expect(dbSeat?.status).toBe(SeatStatus.AVAILABLE);
+      expect(dbSeat?.heldById).toBeNull();
+    });
+
+    it("does not release a seat held by a different user", async () => {
+      show = await createTestShow();
+      const showId = show.id;
+      const seat = await createTestSeat(showId);
+      const [holder, attacker] = await Promise.all([createTestUser(), createTestUser()]);
+      userIds = [holder.id, attacker.id];
+      const { accessToken: holderToken } = await issueTokenPair(holder.id, holder.role);
+      const { accessToken: attackerToken } = await issueTokenPair(attacker.id, attacker.role);
+      await request(app)
+        .post(`/shows/${showId}/hold`)
+        .set("Authorization", `Bearer ${holderToken}`)
+        .send({ seatIds: [seat.id] });
+
+      const res = await request(app)
+        .post(`/shows/${showId}/release`)
+        .set("Authorization", `Bearer ${attackerToken}`)
+        .send({ seatIds: [seat.id] });
+
+      // Best-effort cleanup, not a claim -- returns 200 either way, but the
+      // seat itself must stay held by its real holder.
+      expect(res.status).toBe(200);
+      const dbSeat = await prisma.seat.findUnique({ where: { id: seat.id } });
+      expect(dbSeat?.status).toBe(SeatStatus.HELD);
+      expect(dbSeat?.heldById).toBe(holder.id);
+    });
+  });
 });

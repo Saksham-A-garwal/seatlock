@@ -1,3 +1,4 @@
+import { SeatStatus } from "@prisma/client";
 import { prisma } from "../db/prisma";
 import { config } from "../config";
 import { isRetryableDbError } from "../resilience/isRetryableDbError";
@@ -36,6 +37,38 @@ export class HoldService {
           await this.seatRepository.persistHold(tx, uniqueSeatIds, userId, holdExpiresAt);
 
           return seats;
+        }),
+      { ...config.resilience, isRetryable: isRetryableDbError }
+    );
+  }
+
+  // Explicit release -- called when the user cancels checkout (closes the
+  // payment widget without paying), rather than waiting for the hold's TTL
+  // to lapse. Locked the same way holdSeats is: if the payment webhook is
+  // concurrently confirming this exact seat (the payment actually went
+  // through a moment before the user clicked cancel), whichever transaction
+  // gets the row lock first wins, and the other sees the seat's true
+  // resulting state -- there's no window where release could stomp on a
+  // just-booked seat, or the confirm path could book a seat that was
+  // genuinely released first. A seat not held by this user (already
+  // released, expired, or someone else's) is silently skipped rather than
+  // erroring -- this is best-effort cleanup, not a claim being enforced.
+  async releaseHold(showId: number, seatIds: number[], userId: number): Promise<void> {
+    const uniqueSeatIds = [...new Set(seatIds)];
+
+    await withRetry(
+      () =>
+        prisma.$transaction(async (tx) => {
+          const seats = await this.seatRepository.lockForUpdate(tx, showId, uniqueSeatIds);
+          const releasable = seats.filter((seat) => seat.status === SeatStatus.HELD && seat.heldById === userId);
+          if (releasable.length === 0) {
+            return;
+          }
+          releasable.forEach((seat) => seat.release());
+          await this.seatRepository.persistRelease(
+            tx,
+            releasable.map((seat) => seat.id)
+          );
         }),
       { ...config.resilience, isRetryable: isRetryableDbError }
     );

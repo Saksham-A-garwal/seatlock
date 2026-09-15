@@ -210,5 +210,32 @@ export function createSeatsRouter(): Router {
     })
   );
 
+  router.post(
+    "/shows/:id/release",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const showId = parsePositiveInt(req.params.id);
+      if (showId === null) {
+        res.status(400).json({ error: { code: "INVALID_SHOW_ID", message: "showId must be a positive integer" } });
+        return;
+      }
+
+      const { seatIds } = req.body as { seatIds?: unknown };
+      if (
+        !Array.isArray(seatIds) ||
+        seatIds.length === 0 ||
+        !seatIds.every((id) => Number.isInteger(id) && id > 0)
+      ) {
+        res.status(400).json({
+          error: { code: "INVALID_SEAT_IDS", message: "seatIds must be a non-empty array of positive integers" },
+        });
+        return;
+      }
+
+      await holdService.releaseHold(showId, seatIds as number[], req.auth!.id);
+      res.status(200).json({ message: "Seats released" });
+    })
+  );
+
   return router;
 }

@@ -59,6 +59,13 @@ export class SeatRepository {
     });
   }
 
+  async persistRelease(tx: Prisma.TransactionClient, seatIds: number[]): Promise<void> {
+    await tx.seat.updateMany({
+      where: { id: { in: seatIds } },
+      data: { status: SeatStatus.AVAILABLE, heldById: null, holdExpiresAt: null },
+    });
+  }
+
   async findByShow(showId: number): Promise<Seat[]> {
     const rows = await prisma.seat.findMany({
       where: { showId },

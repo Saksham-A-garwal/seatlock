@@ -174,6 +174,10 @@ export function holdSeats(showId: number, seatIds: number[]): Promise<{ seats: H
   return request(`/shows/${showId}/hold`, { method: "POST", body: { seatIds } });
 }
 
+export function releaseHold(showId: number, seatIds: number[]): Promise<{ message: string }> {
+  return request(`/shows/${showId}/release`, { method: "POST", body: { seatIds } });
+}
+
 export function createOrder(
   showId: number,
   seatIds: number[]

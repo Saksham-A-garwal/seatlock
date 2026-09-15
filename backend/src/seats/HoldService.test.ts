@@ -132,4 +132,60 @@ describe("HoldService", () => {
     expect(result[0].status).toBe(SeatStatus.HELD);
     expect(result[0].heldById).toBe(user.id);
   });
+
+  describe("releaseHold", () => {
+    it("releases a seat held by the requesting user back to available", async () => {
+      const show = await createTestShow();
+      showId = show.id;
+      const seat = await createTestSeat(showId);
+      const user = await createTestUser();
+      userIds.push(user.id);
+      await holdService.holdSeats(showId, [seat.id], user.id, 5);
+
+      await holdService.releaseHold(showId, [seat.id], user.id);
+
+      const dbSeat = await prisma.seat.findUnique({ where: { id: seat.id } });
+      expect(dbSeat?.status).toBe(SeatStatus.AVAILABLE);
+      expect(dbSeat?.heldById).toBeNull();
+      expect(dbSeat?.holdExpiresAt).toBeNull();
+    });
+
+    it("silently ignores a seat held by a different user", async () => {
+      const show = await createTestShow();
+      showId = show.id;
+      const seat = await createTestSeat(showId);
+      const [holder, otherUser] = await Promise.all([createTestUser(), createTestUser()]);
+      userIds.push(holder.id, otherUser.id);
+      await holdService.holdSeats(showId, [seat.id], holder.id, 5);
+
+      await holdService.releaseHold(showId, [seat.id], otherUser.id);
+
+      const dbSeat = await prisma.seat.findUnique({ where: { id: seat.id } });
+      expect(dbSeat?.status).toBe(SeatStatus.HELD);
+      expect(dbSeat?.heldById).toBe(holder.id);
+    });
+
+    it("silently ignores an already-BOOKED seat", async () => {
+      const show = await createTestShow();
+      showId = show.id;
+      const user = await createTestUser();
+      userIds.push(user.id);
+      const booked = await createTestSeat(showId, { status: SeatStatus.BOOKED });
+
+      await holdService.releaseHold(showId, [booked.id], user.id);
+
+      const dbSeat = await prisma.seat.findUnique({ where: { id: booked.id } });
+      expect(dbSeat?.status).toBe(SeatStatus.BOOKED);
+    });
+
+    it("does not throw when the seat is already available", async () => {
+      const show = await createTestShow();
+      showId = show.id;
+      const seat = await createTestSeat(showId);
+      const user = await createTestUser();
+      userIds.push(user.id);
+
+      await expect(holdService.releaseHold(showId, [seat.id], user.id)).resolves.not.toThrow();
+    });
+  });
 });
