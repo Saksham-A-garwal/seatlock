@@ -3,8 +3,9 @@ import { requireAuth } from "../auth/middleware";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parsePositiveInt } from "../utils/parsePositiveInt";
 import { CancellationWindowPassedError, InvalidBookingTransitionError } from "../domain/errors";
+import { generateBookingQrPng } from "./bookingQrCode";
 import { BookingService } from "./BookingService";
-import { BookingNotFoundError } from "./errors";
+import { BookingNotConfirmedError, BookingNotFoundError } from "./errors";
 
 export function createBookingsRouter(): Router {
   const router = Router();
@@ -37,6 +38,36 @@ export function createBookingsRouter(): Router {
           })),
         })),
       });
+    })
+  );
+
+  router.get(
+    "/bookings/:id/qr",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const bookingId = parsePositiveInt(req.params.id);
+      if (bookingId === null) {
+        res
+          .status(400)
+          .json({ error: { code: "INVALID_BOOKING_ID", message: "bookingId must be a positive integer" } });
+        return;
+      }
+
+      try {
+        const booking = await bookingService.getConfirmedBookingForOwner(bookingId, req.auth!.id);
+        const qrPng = await generateBookingQrPng(booking.id);
+        res.status(200).set("Content-Type", "image/png").send(qrPng);
+      } catch (error) {
+        if (error instanceof BookingNotFoundError) {
+          res.status(404).json({ error: { code: "BOOKING_NOT_FOUND", message: error.message } });
+          return;
+        }
+        if (error instanceof BookingNotConfirmedError) {
+          res.status(409).json({ error: { code: "BOOKING_NOT_CONFIRMED", message: error.message } });
+          return;
+        }
+        throw error;
+      }
     })
   );
 

@@ -1,10 +1,10 @@
-import { SeatStatus } from "@prisma/client";
+import { BookingStatus, SeatStatus } from "@prisma/client";
 import { prisma } from "../db/prisma";
 import { config } from "../config";
 import { isRetryableDbError } from "../resilience/isRetryableDbError";
 import { withRetry } from "../resilience/withRetry";
 import { Booking } from "../domain/Booking";
-import { BookingNotFoundError } from "./errors";
+import { BookingNotConfirmedError, BookingNotFoundError } from "./errors";
 
 export class BookingService {
   async getBookingsForUser(userId: number) {
@@ -16,6 +16,20 @@ export class BookingService {
       },
       orderBy: { createdAt: "desc" },
     });
+  }
+
+  // Ownership and confirmed-status are both prerequisites for a QR ticket
+  // existing at all -- same "doesn't exist vs. isn't yours" collapse as
+  // cancelBooking below, for the same IDOR-safety reason.
+  async getConfirmedBookingForOwner(bookingId: number, userId: number): Promise<{ id: number }> {
+    const row = await prisma.booking.findUnique({ where: { id: bookingId }, select: { id: true, userId: true, status: true } });
+    if (!row || row.userId !== userId) {
+      throw new BookingNotFoundError();
+    }
+    if (row.status !== BookingStatus.CONFIRMED) {
+      throw new BookingNotConfirmedError();
+    }
+    return { id: row.id };
   }
 
   async cancelBooking(bookingId: number, userId: number, now: Date = new Date()): Promise<Booking> {

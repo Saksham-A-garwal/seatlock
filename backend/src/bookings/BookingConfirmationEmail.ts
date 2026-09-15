@@ -1,5 +1,5 @@
-import QRCode from "qrcode";
 import { EmailMessage } from "../auth/EmailSender";
+import { bookingReference, generateBookingQrPng } from "./bookingQrCode";
 
 interface BookingConfirmationDetails {
   bookingId: number;
@@ -20,16 +20,9 @@ function escapeHtml(value: string): string {
   );
 }
 
-// The QR payload is just a stable, scannable reference to the booking --
-// there's no separate check-in system on the other end of this yet, so it
-// deliberately carries no secret or claim beyond "this booking exists".
-function bookingReference(bookingId: number): string {
-  return `SEATLOCK-BOOKING-${bookingId}`;
-}
-
 export async function buildBookingConfirmationEmail(details: BookingConfirmationDetails): Promise<EmailMessage> {
   const reference = bookingReference(details.bookingId);
-  const qrPng = await QRCode.toBuffer(reference, { width: 240, margin: 1 });
+  const qrPng = await generateBookingQrPng(details.bookingId);
   const showtimeText = details.showtime.toLocaleString("en-IN", {
     dateStyle: "full",
     timeStyle: "short",

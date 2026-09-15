@@ -69,7 +69,11 @@ interface RequestOptions {
   body?: unknown;
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+// Shared by request() and requestBlob(): does the fetch, and on a 401,
+// the one automatic refresh-and-retry (the access token expired mid-session,
+// not that the user was never signed in) -- everything after that differs
+// by response shape (JSON vs. binary), which is why it's split out here.
+async function authedFetch(path: string, options: RequestOptions = {}): Promise<Response> {
   const doFetch = (): Promise<Response> =>
     fetch(`${API_BASE_URL}${path}`, {
       method: options.method ?? "GET",
@@ -83,8 +87,6 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   let res = await doFetch();
 
-  // One automatic refresh-and-retry on a 401 -- the access token expired
-  // mid-session, not that the user was never signed in.
   if (res.status === 401) {
     const newToken = await refreshAccessToken();
     if (newToken) {
@@ -94,15 +96,30 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     }
   }
 
+  return res;
+}
+
+async function throwApiError(res: Response): Promise<never> {
   const data = await res.json().catch(() => null);
+  const code = (data?.error?.code as string | undefined) ?? "UNKNOWN_ERROR";
+  const message = (data?.error?.message as string | undefined) ?? `Request failed with status ${res.status}`;
+  throw new ApiError(res.status, code, message);
+}
 
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const res = await authedFetch(path, options);
   if (!res.ok) {
-    const code = (data?.error?.code as string | undefined) ?? "UNKNOWN_ERROR";
-    const message = (data?.error?.message as string | undefined) ?? `Request failed with status ${res.status}`;
-    throw new ApiError(res.status, code, message);
+    await throwApiError(res);
   }
+  return (await res.json()) as T;
+}
 
-  return data as T;
+async function requestBlob(path: string): Promise<Blob> {
+  const res = await authedFetch(path);
+  if (!res.ok) {
+    await throwApiError(res);
+  }
+  return res.blob();
 }
 
 export interface PublicUser {
@@ -214,6 +231,13 @@ export function cancelBooking(
   bookingId: number
 ): Promise<{ booking: { id: number; status: string; cancelledAt: string } }> {
   return request(`/bookings/${bookingId}/cancel`, { method: "POST" });
+}
+
+// Returns an object URL for the QR PNG -- caller owns it and must
+// URL.revokeObjectURL() it once done (e.g. on unmount) to avoid leaking it.
+export async function getBookingQrImageUrl(bookingId: number): Promise<string> {
+  const blob = await requestBlob(`/bookings/${bookingId}/qr`);
+  return URL.createObjectURL(blob);
 }
 
 export interface CreateShowInput {
