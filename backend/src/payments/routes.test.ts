@@ -15,10 +15,16 @@ describe("payments routes", () => {
   let paymentIds: number[] = [];
 
   afterEach(async () => {
-    if (paymentIds.length > 0) {
-      await prisma.payment.deleteMany({ where: { id: { in: paymentIds } } });
-      paymentIds = [];
+    // paymentIds.push(res.body.paymentId) runs unconditionally after every
+    // request in these tests -- if the request itself failed (e.g. a real
+    // Razorpay API hiccup) that's `undefined`, not a real id. Filtering here
+    // means a flaky upstream failure surfaces as its own real error message
+    // instead of being masked by Prisma rejecting an `undefined` in `in: []`.
+    const validPaymentIds = paymentIds.filter((id): id is number => typeof id === "number");
+    if (validPaymentIds.length > 0) {
+      await prisma.payment.deleteMany({ where: { id: { in: validPaymentIds } } });
     }
+    paymentIds = [];
     if (show) await cleanupShow(show.id);
     show = undefined;
     await cleanupUsers(userIds);
