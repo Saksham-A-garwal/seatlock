@@ -32,6 +32,7 @@ SeatLock is built around three deliberately hard engineering problems, each prov
 - [The four decisions worth understanding](#the-four-decisions-worth-understanding)
 - [Auth design](#auth-design)
 - [Admin dashboard](#admin-dashboard)
+- [Booking confirmation email + QR ticket](#booking-confirmation-email--qr-ticket)
 - [Known limitations](#known-limitations-deliberate-scope-cuts-not-oversights)
 - [Project structure](#project-structure)
 - [Running it locally](#running-it-locally)
@@ -51,9 +52,9 @@ SeatLock is built around three deliberately hard engineering problems, each prov
 | Auth | Google OAuth + email OTP (one-time code, no passwords anywhere) | See [Auth design](#auth-design). |
 | Rate limiting | Redis (Upstash, REST-based) | See [decision #3](#3-rate-limiting-redis-backed-per-route-group-fails-open). |
 | Payments | Razorpay (test mode), Orders API + webhooks — cards and UPI both, one integration | See [decision #2](#2-payments-webhook-only-confirmation-never-the-client). |
-| Email | Resend | OTP code delivery. |
+| Email | Resend | OTP codes and booking confirmations (inline QR ticket). |
 | Frontend | React + TypeScript + Vite, plain CSS Modules | No Redux/React Query — React Context for auth state, a hand-written typed `fetch` wrapper for the API client. Deliberately minimal; the backend is the point. |
-| Testing | Vitest + Supertest | 159 backend tests, run against a **real** local Postgres, **real** Upstash Redis, and **real** Razorpay test-mode API — not mocks. See [Testing](#testing) for why. |
+| Testing | Vitest + Supertest | 187 backend tests, run against a **real** local Postgres, **real** Upstash Redis, and **real** Razorpay test-mode API — not mocks. See [Testing](#testing) for why. |
 
 ---
 
@@ -447,7 +448,7 @@ Worth being honest about: when I deliberately removed `ORDER BY id` and re-ran t
 - *Grace period* — honor the hold a little past its nominal expiry.
 - *Refund-and-notify* — if the hold didn't survive, refund the charge and leave the seat exactly as its current state says.
 
-I went with refund-and-notify. A grace period only works if nobody else claimed the seat in the meantime — but this system lets *any* user immediately re-hold a seat the instant it expires (Milestone 3's own design), so honoring a late payment could mean bumping someone who legitimately re-held or even re-booked it in good faith. That's not obviously fairer, just differently unfair, for real added complexity. Refund-and-notify is simpler and never wrong: the seat's actual current state is always the source of truth, nobody is ever double-booked or bumped, and the original payer gets their money back automatically. "Notify" here means a clear server-side log line, not a user-facing email — building real notifications would quietly re-open a scope cut the product requirements explicitly made (no notifications system for this MVP).
+I went with refund-and-notify. A grace period only works if nobody else claimed the seat in the meantime — but this system lets *any* user immediately re-hold a seat the instant it expires (Milestone 3's own design), so honoring a late payment could mean bumping someone who legitimately re-held or even re-booked it in good faith. That's not obviously fairer, just differently unfair, for real added complexity. Refund-and-notify is simpler and never wrong: the seat's actual current state is always the source of truth, nobody is ever double-booked or bumped, and the original payer gets their money back automatically. On *this* branch, "notify" is still just a clear server-side log line, not a user-facing email — there's no seat to send a ticket for, so a refund notification would be a separate feature (a "your payment was refunded" email) that was never built. The successful branch is different: see [Booking confirmation email + QR ticket](#booking-confirmation-email--qr-ticket) below.
 
 [`PaymentService.test.ts`](backend/src/payments/PaymentService.test.ts) drives this against the real Razorpay test API wherever that's actually possible — a real `orders.create()` call, a real re-lock transaction, a real `FAILED` status write, a real untouched seat. One honest gap from the equivalent Stripe setup: Stripe lets a test *complete* a Payment Intent purely server-side (`paymentIntents.confirm` with a test token), so the old race-case test could also assert a genuine refund round-trip. Razorpay's test mode has no headless, server-only way to drive an Order to a real `captured` payment — Checkout (a browser) is required — so there's no real captured payment to refund from a Node test process. The race-case test stubs only that one refund call (`vi.spyOn`, asserted with the correct payment ID and amount); everything else in the same test — the DB transaction, the hold-expiry detection, the `FAILED` write, the seat being left untouched — is real, and the webhook's actual signature verification is proven for real, separately, in `routes.test.ts`.
 
@@ -499,6 +500,17 @@ The SRS defines exactly two admin capabilities beyond a regular user: **create s
   - `GET /admin/bookings` — every booking across every user (not just the caller's own, unlike `GET /bookings`), filterable by status, newest first.
 
 All three sit behind the same `requireAuth` + `requireAdmin` middleware chain as `POST /shows` — a non-admin token gets a `403`, not a silently filtered response, per the SRS's own authorization rule. No new domain rule was introduced for this: it's a read-only aggregation over the existing Prisma models, which is why it lives in its own thin `src/admin/` module instead of inside `seats` or `bookings`.
+
+---
+
+## Booking confirmation email + QR ticket
+
+Once `confirmPayment` commits a booking (the same webhook-driven path [decision #2](#2-payments-webhook-only-confirmation-never-the-client) describes), it sends the payer a confirmation email — movie, venue, showtime, seat labels, amount paid — with a QR code embedded directly in the email body, not just attached as a file.
+
+- **The QR is inline, via `cid:`, not a base64 data URI.** Resend's attachment API accepts a `contentId`, which the HTML body then references as `<img src="cid:booking-qr">` — the standard mechanism mail clients support for showing an attached image inline, and more broadly compatible across clients than embedding the image as a base64 string directly in the HTML.
+- **`EmailSender` had to grow up first.** It only supported `send(to, subject, body: string)` — plain text, no attachments — because that's all OTP delivery ever needed. It's now `send(message: EmailMessage)`, where `EmailMessage` carries `text`, optional `html`, and optional `attachments` (each with an optional `contentId` for inline references). `ResendEmailSender`, `FakeEmailSender`, and the one existing caller (`OtpService`) were all updated to the new shape — verified directly against Resend's own installed type definitions before writing the interface, not assumed.
+- **Best-effort, deliberately outside the DB transaction.** The email is sent *after* the booking-confirming transaction commits, and a failure to send it is caught and logged, never rethrown. A flaky email provider must never look like a failed webhook to Razorpay (which would trigger a retry) or undo an already-confirmed booking — the booking succeeding is the critical path; the email is a notification on top of it, matching this project's established pattern of keeping external I/O (Razorpay refunds, now this) outside any Prisma transaction and never a source of rollback.
+- **Tested with a real `FakeEmailSender`, verified for real against Resend.** [`PaymentService.test.ts`](backend/src/payments/PaymentService.test.ts) injects a `FakeEmailSender` and asserts the sent message's recipient, subject, seat labels, booking reference, the `cid:booking-qr` HTML reference, and a non-empty PNG attachment — and that the refund/race branch sends no email at all. The real `ResendEmailSender` path (the actual Resend API call) was separately verified live against a real booking, a real Razorpay order, and a real Resend send.
 
 ---
 

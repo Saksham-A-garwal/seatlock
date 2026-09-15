@@ -2,6 +2,9 @@ import Razorpay from "razorpay";
 import { BookingStatus, PaymentStatus, SeatStatus } from "@prisma/client";
 import { prisma } from "../db/prisma";
 import { config } from "../config";
+import { EmailSender } from "../auth/EmailSender";
+import { ResendEmailSender } from "../auth/ResendEmailSender";
+import { buildBookingConfirmationEmail } from "../bookings/BookingConfirmationEmail";
 import { isRetryableDbError } from "../resilience/isRetryableDbError";
 import { isRetryableRazorpayError } from "../resilience/isRetryableRazorpayError";
 import { withRetry } from "../resilience/withRetry";
@@ -11,6 +14,13 @@ import { SeatNotFoundError } from "../seats/errors";
 import { HoldNotValidError } from "./errors";
 import { razorpayClient } from "./razorpayClient";
 
+// What actually happened inside the transaction, decided and persisted in
+// there; the confirmation email (and, on the other branch, the refund) is
+// sent only after that transaction has committed -- same reasoning as
+// rotateRefreshToken's RotationOutcome: never do external I/O, or decide
+// what to do about it, from inside an interactive transaction.
+type ConfirmOutcome = { kind: "refund" } | { kind: "booked"; bookingId: number };
+
 // Razorpay amounts are in the smallest currency unit -- paise, not rupees.
 function rupeesToPaise(amount: number): number {
   return Math.round(amount * 100);
@@ -19,7 +29,8 @@ function rupeesToPaise(amount: number): number {
 export class PaymentService {
   constructor(
     private readonly seatRepository: SeatRepository,
-    private readonly razorpay: Razorpay = razorpayClient
+    private readonly razorpay: Razorpay = razorpayClient,
+    private readonly emailSender: EmailSender = new ResendEmailSender()
   ) {}
 
   // Plain (non-locking) read: this step calls out to Razorpay, and a
@@ -90,9 +101,9 @@ export class PaymentService {
       return;
     }
 
-    const needsRefund = await withRetry(
+    const outcome = await withRetry(
       () =>
-        prisma.$transaction(async (tx) => {
+        prisma.$transaction(async (tx): Promise<ConfirmOutcome> => {
           // Re-lock the same seats, same pattern as Milestone 3's hold logic.
           const seats = await this.seatRepository.lockForUpdate(tx, paymentRow.showId, paymentRow.seatIds);
           const now = new Date();
@@ -118,7 +129,7 @@ export class PaymentService {
               where: { id: paymentRow.id },
               data: { status: payment.status, razorpayPaymentId },
             });
-            return true;
+            return { kind: "refund" };
           }
 
           const booking = await tx.booking.create({
@@ -143,12 +154,12 @@ export class PaymentService {
             data: { status: payment.status, bookingId: payment.bookingId, razorpayPaymentId },
           });
 
-          return false;
+          return { kind: "booked", bookingId: booking.id };
         }),
       { ...config.resilience, isRetryable: isRetryableDbError }
     );
 
-    if (needsRefund) {
+    if (outcome.kind === "refund") {
       await withRetry(
         () => this.razorpay.payments.refund(razorpayPaymentId, { amount: rupeesToPaise(paymentRow.amount.toNumber()) }),
         { ...config.resilience, isRetryable: isRetryableRazorpayError }
@@ -156,6 +167,47 @@ export class PaymentService {
       console.error(
         `Refunded payment ${razorpayPaymentId}: hold expired before webhook confirmation arrived (race case, see SRS edge cases).`
       );
+      return;
+    }
+
+    await this.sendBookingConfirmationEmail(outcome.bookingId, paymentRow.userId, paymentRow.showId, paymentRow.seatIds, paymentRow.amount.toNumber());
+  }
+
+  // Best-effort, and deliberately outside the DB transaction: a failed email
+  // must never undo (or even retry) an already-confirmed booking. Razorpay
+  // will retry the webhook on a 5xx, and confirmPayment is already
+  // idempotent for that -- but making a flaky email provider the reason a
+  // webhook delivery looks "failed" would be its own bug, so this just logs.
+  private async sendBookingConfirmationEmail(
+    bookingId: number,
+    userId: number,
+    showId: number,
+    seatIds: number[],
+    totalPrice: number
+  ): Promise<void> {
+    try {
+      const [user, show, seats] = await Promise.all([
+        prisma.user.findUniqueOrThrow({ where: { id: userId } }),
+        prisma.show.findUniqueOrThrow({ where: { id: showId } }),
+        prisma.seat.findMany({
+          where: { id: { in: seatIds } },
+          orderBy: [{ rowLabel: "asc" }, { seatNumber: "asc" }],
+        }),
+      ]);
+
+      const message = await buildBookingConfirmationEmail({
+        bookingId,
+        userEmail: user.email,
+        movieName: show.movieName,
+        venue: show.venue,
+        showtime: show.showtime,
+        seatLabels: seats.map((seat) => `${seat.rowLabel}${seat.seatNumber}`),
+        totalPrice,
+      });
+
+      await this.emailSender.send(message);
+    } catch (error) {
+      console.error(`Failed to send booking confirmation email for booking ${bookingId}:`, error);
     }
   }
 

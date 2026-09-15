@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Refunds } from "razorpay/dist/types/refunds";
 import { BookingStatus, PaymentStatus, SeatStatus } from "@prisma/client";
+import { FakeEmailSender } from "../auth/FakeEmailSender";
 import { prisma } from "../db/prisma";
 import { SeatRepository } from "../seats/SeatRepository";
 import { SeatNotFoundError } from "../seats/errors";
@@ -10,7 +11,8 @@ import { PaymentService } from "./PaymentService";
 import { razorpayClient } from "./razorpayClient";
 
 describe("PaymentService", () => {
-  const paymentService = new PaymentService(new SeatRepository());
+  const emailSender = new FakeEmailSender();
+  const paymentService = new PaymentService(new SeatRepository(), undefined, emailSender);
   let showId: number | undefined;
   const userIds: number[] = [];
   const paymentIds: number[] = [];
@@ -24,6 +26,7 @@ describe("PaymentService", () => {
     showId = undefined;
     await cleanupUsers(userIds);
     userIds.length = 0;
+    emailSender.sent.length = 0;
   });
 
   describe("createOrder", () => {
@@ -135,6 +138,39 @@ describe("PaymentService", () => {
       expect(booking?.totalPrice.toNumber()).toBe(300);
     });
 
+    it("sends a confirmation email with an inline QR ticket once the booking is confirmed", async () => {
+      const show = await createTestShow();
+      showId = show.id;
+      const seat = await createTestSeat(showId, { price: 300 });
+      const user = await createTestUser();
+      userIds.push(user.id);
+      await prisma.seat.update({
+        where: { id: seat.id },
+        data: { status: SeatStatus.HELD, heldById: user.id, holdExpiresAt: new Date(Date.now() + 60_000) },
+      });
+
+      const { paymentId } = await paymentService.createOrder(showId, [seat.id], user.id);
+      paymentIds.push(paymentId);
+      const payment = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
+
+      await paymentService.confirmPayment(payment.razorpayOrderId, "pay_test_synthetic");
+
+      const updatedPayment = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
+      const booking = await prisma.booking.findUniqueOrThrow({ where: { id: updatedPayment.bookingId! } });
+
+      expect(emailSender.sent).toHaveLength(1);
+      const [message] = emailSender.sent;
+      expect(message.to).toBe(user.email);
+      expect(message.subject).toContain(show.movieName);
+      expect(message.text).toContain(`${seat.rowLabel}${seat.seatNumber}`);
+      expect(message.text).toContain(`SEATLOCK-BOOKING-${booking.id}`);
+      expect(message.html).toContain("cid:booking-qr");
+      expect(message.attachments).toHaveLength(1);
+      expect(message.attachments![0].contentId).toBe("booking-qr");
+      expect(message.attachments![0].contentType).toBe("image/png");
+      expect(message.attachments![0].content.length).toBeGreaterThan(0);
+    });
+
     it("is idempotent: calling it twice for the same order only books once", async () => {
       const show = await createTestShow();
       showId = show.id;
@@ -201,6 +237,9 @@ describe("PaymentService", () => {
 
         expect(refundSpy).toHaveBeenCalledWith("pay_test_synthetic", { amount: 40_000 });
         refundSpy.mockRestore();
+
+        // No booking was made, so there is nothing to confirm by email.
+        expect(emailSender.sent).toHaveLength(0);
       },
       15_000
     );

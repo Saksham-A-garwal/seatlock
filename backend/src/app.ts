@@ -23,8 +23,9 @@ interface CreateAppOptions {
 export function createApp(options: CreateAppOptions = {}): Express {
   const app = express();
 
+  const emailSender = options.emailSender ?? new ResendEmailSender();
   const seatRepository = new SeatRepository();
-  const paymentService = new PaymentService(seatRepository);
+  const paymentService = new PaymentService(seatRepository, undefined, emailSender);
 
   // Must be mounted BEFORE express.json(): Razorpay's webhook signature check
   // needs the raw, unparsed request body.
@@ -48,7 +49,6 @@ export function createApp(options: CreateAppOptions = {}): Express {
     }
   });
 
-  const emailSender = options.emailSender ?? new ResendEmailSender();
   const otpService = new OtpService(emailSender);
   app.use("/auth", createAuthRouter(otpService));
   app.use(createSeatsRouter());

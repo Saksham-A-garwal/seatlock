@@ -25,11 +25,11 @@ export class OtpService {
       data: { email, codeHash, expiresAt },
     });
 
-    await this.emailSender.send(
-      email,
-      "Your SeatLock sign-in code",
-      `Your sign-in code is ${code}. It expires in ${config.otpTtlMinutes} minutes.`
-    );
+    await this.emailSender.send({
+      to: email,
+      subject: "Your SeatLock sign-in code",
+      text: `Your sign-in code is ${code}. It expires in ${config.otpTtlMinutes} minutes.`,
+    });
   }
 
   // Returns the signed-in user on success; creates the account on first
