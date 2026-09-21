@@ -12,6 +12,19 @@
       rel="stylesheet"
     />
     <title>SeatLock</title>
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("seatlock-theme");
+          if (stored === "dark" || stored === "light") {
+            document.documentElement.setAttribute("data-theme", stored);
+          }
+        } catch (e) {
+          // Storage unavailable (private mode, etc.) -- fall back to the
+          // prefers-color-scheme media query already in index.css.
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

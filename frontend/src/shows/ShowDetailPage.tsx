@@ -3,8 +3,8 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ApiError, getSeatMap, holdSeats, type SeatDto, type ShowDetail } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { ErrorBanner } from "../components/ErrorBanner";
-import { PageSpinner } from "../components/PageSpinner";
 import { Poster } from "../components/Poster";
+import { Toast } from "../components/Toast";
 import { SeatCountModal } from "./SeatCountModal";
 import { SeatGrid } from "./SeatGrid";
 import styles from "./ShowDetailPage.module.css";
@@ -32,14 +32,18 @@ export function ShowDetailPage() {
   const [seatCount, setSeatCount] = useState<number | null>(null);
   const [capNotice, setCapNotice] = useState<string | null>(null);
   const capNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [shakingSeatIds, setShakingSeatIds] = useState<Set<number>>(new Set());
+  const [conflictToast, setConflictToast] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       const data = await getSeatMap(showId);
       setShow(data.show);
       setSeats(data.seats);
+      return data.seats;
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : "Could not load this show.");
+      return null;
     }
   }, [showId]);
 
@@ -93,9 +97,23 @@ export function ShowDetailPage() {
       });
     } catch (err) {
       if (err instanceof ApiError && err.code === "SEAT_UNAVAILABLE") {
-        setActionError("That seat was just taken. Please choose another.");
+        const lostSeatIds = [...selectedSeatIds];
+        const freshSeats = await load();
+        const stillUnavailable = freshSeats
+          ? freshSeats.filter((s) => lostSeatIds.includes(s.id) && s.status !== "AVAILABLE")
+          : [];
         setSelectedSeatIds(new Set());
-        await load();
+        if (stillUnavailable.length > 0) {
+          setShakingSeatIds(new Set(stillUnavailable.map((s) => s.id)));
+          setTimeout(() => setShakingSeatIds(new Set()), 400);
+          setConflictToast(
+            stillUnavailable.length === 1
+              ? `Someone just grabbed seat ${stillUnavailable[0].rowLabel}${stillUnavailable[0].seatNumber}`
+              : "A couple of your selected seats were just taken"
+          );
+        } else {
+          setActionError("That seat was just taken. Please choose another.");
+        }
       } else {
         setActionError(err instanceof ApiError ? err.message : "Could not hold your seats. Please try again.");
       }
@@ -108,7 +126,29 @@ export function ShowDetailPage() {
     return <ErrorBanner message={loadError} />;
   }
   if (!show || !seats) {
-    return <PageSpinner />;
+    return (
+      <div className={styles.container} aria-hidden="true">
+        <div className={styles.hero}>
+          <div className={`${styles.posterFrame} ${styles.skeletonBlock}`} />
+          <div className={styles.heroInfo}>
+            <div className={`${styles.skeletonLine} ${styles.skeletonLineLg}`} />
+            <div className={`${styles.skeletonLine} ${styles.skeletonLineSm}`} />
+            <div className={`${styles.skeletonLine} ${styles.skeletonLineSm}`} />
+          </div>
+        </div>
+        <div className={styles.seatSection}>
+          <div className={styles.skeletonSeatGrid}>
+            {Array.from({ length: 6 }).map((_, row) => (
+              <div key={row} className={styles.skeletonSeatRow}>
+                {Array.from({ length: 8 }).map((_, col) => (
+                  <div key={col} className={`${styles.skeletonBlock} ${styles.skeletonSeat}`} />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const selectedSeats = seats.filter((seat) => selectedSeatIds.has(seat.id));
@@ -167,7 +207,13 @@ export function ShowDetailPage() {
           <span>All eyes this way</span>
         </div>
 
-        <SeatGrid seats={seats} selectedSeatIds={selectedSeatIds} onToggle={toggleSeat} disabled={isHolding} />
+        <SeatGrid
+          seats={seats}
+          selectedSeatIds={selectedSeatIds}
+          onToggle={toggleSeat}
+          disabled={isHolding}
+          shakingSeatIds={shakingSeatIds}
+        />
       </div>
 
       <div className={styles.summaryBar}>
@@ -184,6 +230,8 @@ export function ShowDetailPage() {
           {isHolding ? "Holding…" : "Proceed"}
         </button>
       </div>
+
+      <Toast message={conflictToast} onDismiss={() => setConflictToast(null)} />
     </div>
   );
 }

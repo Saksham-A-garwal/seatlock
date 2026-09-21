@@ -71,11 +71,11 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  margin-bottom: var(--space-3);
+  gap: 10px;
+  margin: 0 auto var(--space-4);
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -93,7 +93,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--color-ink);
+  background: var(--color-scrim);
   color: #ffffff;
   border-radius: var(--radius-lg);
   padding: var(--space-2) var(--space-3);
@@ -120,4 +120,55 @@
 
 .proceedButton:disabled {
   opacity: 0.4;
+}
+
+.skeletonBlock {
+  background: linear-gradient(90deg, var(--color-surface) 25%, var(--color-border) 50%, var(--color-surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.skeletonLine {
+  height: 14px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  background: linear-gradient(90deg, var(--color-surface) 25%, var(--color-border) 50%, var(--color-surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.skeletonLineLg {
+  height: 22px;
+  width: 60%;
+}
+
+.skeletonLineSm {
+  width: 40%;
+}
+
+.skeletonSeatGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.skeletonSeatRow {
+  display: flex;
+  gap: 8px;
+}
+
+.skeletonSeat {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px 8px 4px 4px;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }

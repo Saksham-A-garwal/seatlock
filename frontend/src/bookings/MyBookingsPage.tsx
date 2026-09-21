@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, cancelBooking, getBookingQrImageUrl, getBookings, type BookingDto } from "../api/client";
 import { ErrorBanner } from "../components/ErrorBanner";
-import { PageSpinner } from "../components/PageSpinner";
 import styles from "./MyBookingsPage.module.css";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -89,7 +88,22 @@ export function MyBookingsPage() {
     return <ErrorBanner message={error} />;
   }
   if (bookings === null) {
-    return <PageSpinner />;
+    return (
+      <div className={styles.list} aria-hidden="true">
+        {[1, 2, 3].map((key) => (
+          <div key={key} className={styles.card}>
+            <div className={styles.cardTop}>
+              <div style={{ flexGrow: 1 }}>
+                <div className={`${styles.skeletonLine} ${styles.skeletonLineLg}`} />
+                <div className={`${styles.skeletonLine} ${styles.skeletonLineMd}`} />
+                <div className={`${styles.skeletonLine} ${styles.skeletonLineMd}`} />
+              </div>
+              <div className={`${styles.skeletonLine} ${styles.skeletonPill}`} />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
   }
   if (bookings.length === 0) {
     return <p className={styles.empty}>You haven't booked anything yet.</p>;

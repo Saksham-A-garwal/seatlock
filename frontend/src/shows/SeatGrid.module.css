@@ -5,16 +5,18 @@
 }
 
 .scrollArea {
+  display: flex;
+  justify-content: center;
   overflow-x: auto;
   padding-bottom: var(--space-1);
 }
 
 .grid {
-  display: inline-flex;
+  display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: 8px;
   padding: var(--space-2);
-  margin: 0 auto;
 }
 
 .row {
@@ -77,6 +79,29 @@
   background: var(--seat-booked-bg);
   border-color: var(--seat-booked-bg);
   color: rgba(255, 255, 255, 0.6);
+}
+
+.shaking {
+  animation: seat-shake 0.4s ease;
+}
+
+@keyframes seat-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-4px);
+  }
+  40% {
+    transform: translateX(4px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(3px);
+  }
 }
 
 .legend {

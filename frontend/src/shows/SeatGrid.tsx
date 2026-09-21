@@ -6,6 +6,7 @@ interface SeatGridProps {
   selectedSeatIds: Set<number>;
   onToggle: (seat: SeatDto) => void;
   disabled?: boolean;
+  shakingSeatIds?: Set<number>;
 }
 
 function describeStatus(seat: SeatDto, isSelected: boolean): string {
@@ -15,7 +16,13 @@ function describeStatus(seat: SeatDto, isSelected: boolean): string {
   return "available";
 }
 
-export function SeatGrid({ seats, selectedSeatIds, onToggle, disabled = false }: SeatGridProps) {
+export function SeatGrid({
+  seats,
+  selectedSeatIds,
+  onToggle,
+  disabled = false,
+  shakingSeatIds,
+}: SeatGridProps) {
   const rowLabels = [...new Set(seats.map((seat) => seat.rowLabel))].sort();
   const seatsByRow = new Map<string, SeatDto[]>(
     rowLabels.map((label) => [
@@ -48,6 +55,9 @@ export function SeatGrid({ seats, selectedSeatIds, onToggle, disabled = false }:
                 } else if (isHeldByOther) {
                   classNames.push(styles.held);
                   symbol = "●";
+                }
+                if (shakingSeatIds?.has(seat.id)) {
+                  classNames.push(styles.shaking);
                 }
 
                 return (

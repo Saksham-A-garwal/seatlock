@@ -117,3 +117,37 @@
   text-align: center;
   padding: var(--space-5);
 }
+
+.skeletonLine {
+  height: 12px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  background: linear-gradient(90deg, var(--color-surface) 25%, var(--color-border) 50%, var(--color-surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.skeletonLineLg {
+  height: 16px;
+  width: 55%;
+}
+
+.skeletonLineMd {
+  width: 70%;
+}
+
+.skeletonPill {
+  width: 90px;
+  height: 32px;
+  border-radius: var(--radius-pill);
+  margin-bottom: 0;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

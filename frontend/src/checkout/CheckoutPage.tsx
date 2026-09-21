@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ApiError, createOrder, getPaymentStatus, releaseHold, type HeldSeat } from "../api/client";
 import { ErrorBanner } from "../components/ErrorBanner";
@@ -34,6 +34,29 @@ function formatCountdown(seconds: number): string {
 const POLL_INTERVAL_MS = 1500;
 const POLL_TIMEOUT_MS = 30_000;
 
+// Hand-picked rather than Math.random() so every render of the confirmation
+// screen looks the same -- a fixed, pleasant burst rather than an unstable
+// one that could occasionally clump or land off-card.
+const CONFETTI_COLORS = ["#e11d2e", "#17835a", "#b8790a", "#2563eb"];
+const CONFETTI_PIECES: CSSProperties[] = [
+  { left: "4%", animationDelay: "0s" },
+  { left: "12%", animationDelay: "0.08s" },
+  { left: "20%", animationDelay: "0.16s" },
+  { left: "28%", animationDelay: "0.04s" },
+  { left: "36%", animationDelay: "0.22s" },
+  { left: "44%", animationDelay: "0.1s" },
+  { left: "52%", animationDelay: "0.3s" },
+  { left: "60%", animationDelay: "0.02s" },
+  { left: "68%", animationDelay: "0.18s" },
+  { left: "76%", animationDelay: "0.06s" },
+  { left: "84%", animationDelay: "0.26s" },
+  { left: "92%", animationDelay: "0.14s" },
+  { left: "8%", animationDelay: "0.32s" },
+  { left: "48%", animationDelay: "0.12s" },
+  { left: "64%", animationDelay: "0.2s" },
+  { left: "88%", animationDelay: "0.28s" },
+].map((piece, i) => ({ ...piece, background: CONFETTI_COLORS[i % CONFETTI_COLORS.length] }));
+
 export function CheckoutPage() {
   const { id } = useParams<{ id: string }>();
   const showId = Number(id);
@@ -43,6 +66,9 @@ export function CheckoutPage() {
 
   const [phase, setPhase] = useState<Phase>({ name: "loadingIntent" });
   const [remainingSeconds, setRemainingSeconds] = useState(0);
+  // Captured from the first tick so the countdown bar has a stable 100%
+  // reference point -- the hold's actual TTL, as experienced by this page.
+  const initialSecondsRef = useRef<number | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Read only from the unmount-release effect below, via a ref rather than
   // a dependency, specifically so that effect's cleanup runs ONLY on a true
@@ -106,6 +132,9 @@ export function CheckoutPage() {
     if (!state) return;
     function tick() {
       const secondsLeft = Math.max(0, Math.round((new Date(state!.holdExpiresAt).getTime() - Date.now()) / 1000));
+      if (initialSecondsRef.current === null || secondsLeft > initialSecondsRef.current) {
+        initialSecondsRef.current = secondsLeft;
+      }
       setRemainingSeconds(secondsLeft);
       if (secondsLeft === 0 && (phase.name === "loadingIntent" || phase.name === "paying")) {
         navigate(`/shows/${showId}`, {
@@ -244,6 +273,10 @@ export function CheckoutPage() {
   const total = state.seats.reduce((sum, seat) => sum + seat.price, 0);
   const seatLabels = state.seats.map((seat) => `${seat.rowLabel}${seat.seatNumber}`).join(", ");
 
+  const urgency = remainingSeconds <= 30 ? "danger" : remainingSeconds <= 60 ? "warning" : "normal";
+  const totalSeconds = initialSecondsRef.current ?? remainingSeconds;
+  const remainingPct = totalSeconds > 0 ? Math.max(0, Math.round((remainingSeconds / totalSeconds) * 100)) : 0;
+
   return (
     <div className={styles.container}>
       <h1>Checkout</h1>
@@ -256,7 +289,17 @@ export function CheckoutPage() {
           Total: <strong>₹{total.toFixed(2)}</strong>
         </p>
         {(phase.name === "loadingIntent" || phase.name === "paying") && (
-          <p className={styles.countdown}>Complete booking in {formatCountdown(remainingSeconds)}</p>
+          <div className={styles.countdownBlock}>
+            <p className={[styles.countdown, urgency !== "normal" ? styles[urgency] : ""].join(" ")}>
+              Complete booking in {formatCountdown(remainingSeconds)}
+            </p>
+            <div className={styles.countdownTrack}>
+              <div
+                className={[styles.countdownFill, urgency !== "normal" ? styles[urgency] : ""].join(" ")}
+                style={{ width: `${remainingPct}%` }}
+              />
+            </div>
+          </div>
         )}
       </div>
 
@@ -278,6 +321,16 @@ export function CheckoutPage() {
 
       {phase.name === "confirmed" && (
         <div className={styles.confirmation}>
+          <div className={styles.confetti} aria-hidden="true">
+            {CONFETTI_PIECES.map((piece, i) => (
+              <span key={i} className={styles.confettiPiece} style={piece} />
+            ))}
+          </div>
+          <div className={styles.checkCircle}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </div>
           <h2>Booking confirmed</h2>
           <p>Your seats are booked. Booking reference: #{phase.bookingId}</p>
           <Link to="/bookings">View My Bookings</Link>

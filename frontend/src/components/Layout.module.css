@@ -93,6 +93,27 @@
   }
 }
 
+.themeToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: none;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  transition:
+    border-color var(--transition),
+    color var(--transition);
+}
+
+.themeToggle:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
 .signOutButton {
   background: none;
   border: 1px solid var(--color-border);
@@ -134,7 +155,7 @@
 }
 
 .footer {
-  background: var(--color-ink);
+  background: var(--color-scrim);
   color: rgba(255, 255, 255, 0.6);
   margin-top: var(--space-6);
 }

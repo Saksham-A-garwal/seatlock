@@ -13,6 +13,9 @@
   --color-text: #16161a;
   --color-text-muted: #6b6b76;
   --color-ink: #0c0c10;
+  /* A deliberately dark surface (footer, sticky bars) -- stays dark in both
+     themes, unlike --color-ink which inverts for text contrast. */
+  --color-scrim: #0c0c10;
 
   /* Status */
   --color-success: #17835a;
@@ -59,6 +62,64 @@
   --transition: 160ms ease;
 
   color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --color-accent: #ff5a68;
+  --color-accent-dark: #ff8891;
+  --color-accent-light: #3a1417;
+  --color-accent-contrast: #16161a;
+
+  --color-bg: #0c0c10;
+  --color-surface: #141418;
+  --color-surface-raised: #1c1c22;
+  --color-border: #2c2c34;
+  --color-text: #f2f2f5;
+  --color-text-muted: #9a9aa5;
+  --color-ink: #ffffff;
+
+  --color-success: #3ddb96;
+  --color-success-bg: #0f2b21;
+  --color-danger: #ff7a72;
+  --color-danger-bg: #351314;
+  --color-warning: #f0b23d;
+  --color-warning-bg: #332409;
+
+  --seat-available-bg: #1c1c22;
+  --seat-held-bg: #2c2c34;
+  --seat-booked-bg: #050507;
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-accent: #ff5a68;
+    --color-accent-dark: #ff8891;
+    --color-accent-light: #3a1417;
+    --color-accent-contrast: #16161a;
+
+    --color-bg: #0c0c10;
+    --color-surface: #141418;
+    --color-surface-raised: #1c1c22;
+    --color-border: #2c2c34;
+    --color-text: #f2f2f5;
+    --color-text-muted: #9a9aa5;
+    --color-ink: #ffffff;
+
+    --color-success: #3ddb96;
+    --color-success-bg: #0f2b21;
+    --color-danger: #ff7a72;
+    --color-danger-bg: #351314;
+    --color-warning: #f0b23d;
+    --color-warning-bg: #332409;
+
+    --seat-available-bg: #1c1c22;
+    --seat-held-bg: #2c2c34;
+    --seat-booked-bg: #050507;
+
+    color-scheme: dark;
+  }
 }
 
 * {
