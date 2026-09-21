@@ -23,6 +23,10 @@ interface CreateAppOptions {
 export function createApp(options: CreateAppOptions = {}): Express {
   const app = express();
 
+  // Behind a single reverse proxy (Render), req.ip is otherwise the proxy's
+  // address, which would put every user in one shared rate-limit bucket.
+  app.set("trust proxy", 1);
+
   const emailSender = options.emailSender ?? new ResendEmailSender();
   const seatRepository = new SeatRepository();
   const paymentService = new PaymentService(seatRepository, undefined, emailSender);
