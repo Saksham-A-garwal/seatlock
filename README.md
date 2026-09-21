@@ -10,7 +10,13 @@
 [![Razorpay](https://img.shields.io/badge/razorpay-cards%20%2B%20UPI%2C%20webhook--only-0d2366)](#2-payments-webhook-only-confirmation-never-the-client)
 [![Auth](https://img.shields.io/badge/auth-Google%20OAuth%20%2B%20Email%20OTP-orange)](#auth-design)
 
+### [Live demo: seatlock.sakshamagarwal.dev](https://seatlock.sakshamagarwal.dev)
+
 </div>
+
+---
+
+**Try it live.** Sign in with Google or an email code, pick seats, and pay in Razorpay's **test mode** — no real money moves. Use the test card `5267 3181 8797 5449` with any future expiry and any CVV (complete the simulated bank step if one appears). The API runs on Render's free tier, so the first request after a quiet period can take up to a minute while it wakes up. Deployed on Render (API + static frontend), Neon (PostgreSQL) and Upstash (Redis).
 
 ---
 
