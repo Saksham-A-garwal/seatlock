@@ -4,7 +4,7 @@
 
 ### A concurrent movie-seat booking system. You browse shows, pick seats on a live seat map, hold them for 5 minutes, and pay by card or UPI — a booking only ever gets confirmed by a verified Razorpay webhook, never by the client's say-so.
 
-[![Tests](https://img.shields.io/badge/tests-159%20passing-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-192%20passing-brightgreen)](#testing)
 [![TypeScript](https://img.shields.io/badge/typescript-backend%20%2B%20frontend-3178c6)](#tech-stack)
 [![PostgreSQL](https://img.shields.io/badge/postgres-row--level%20locking-336791)](#1-concurrency-pessimistic-locking-with-ordered-lock-acquisition)
 [![Razorpay](https://img.shields.io/badge/razorpay-cards%20%2B%20UPI%2C%20webhook--only-0d2366)](#2-payments-webhook-only-confirmation-never-the-client)
@@ -37,6 +37,7 @@ SeatLock is built around three deliberately hard engineering problems, each prov
 - [Project structure](#project-structure)
 - [Running it locally](#running-it-locally)
 - [Testing](#testing)
+- [Concurrency benchmark](#concurrency-benchmark)
 - [At scale: handling a blockbuster's opening night](#at-scale-handling-a-blockbusters-opening-night)
 
 ---
@@ -54,7 +55,7 @@ SeatLock is built around three deliberately hard engineering problems, each prov
 | Payments | Razorpay (test mode), Orders API + webhooks — cards and UPI both, one integration | See [decision #2](#2-payments-webhook-only-confirmation-never-the-client). |
 | Email | Resend | OTP codes and booking confirmations (inline QR ticket). |
 | Frontend | React + TypeScript + Vite, plain CSS Modules | No Redux/React Query — React Context for auth state, a hand-written typed `fetch` wrapper for the API client. Deliberately minimal; the backend is the point. |
-| Testing | Vitest + Supertest | 187 backend tests, run against a **real** local Postgres, **real** Upstash Redis, and **real** Razorpay test-mode API — not mocks. See [Testing](#testing) for why. |
+| Testing | Vitest + Supertest | 192 backend tests, run against a **real** local Postgres, **real** Upstash Redis, and **real** Razorpay test-mode API — not mocks. See [Testing](#testing) for why. |
 
 ---
 
@@ -433,7 +434,7 @@ Run inside one Postgres transaction: lock the targeted rows, check each one's ef
 
 Worth being honest about: when I deliberately removed `ORDER BY id` and re-ran the reverse-order test, it *didn't* reproduce a deadlock — Postgres's planner, for this simple `id IN (...)` lookup on a small table, already happened to visit rows in ascending `id` order regardless of the literal order in the `IN` list. That's not a reason to drop the clause; it's the reason to keep it. Without `ORDER BY`, that ordering is an accident of the current query plan — the planner is free to pick a different plan (a different index, a sequential scan, parallel workers) as the table grows, and none of those come with an ordering guarantee. `ORDER BY id` turns "happens to be safe right now" into "guaranteed safe by construction," independent of anything the query planner decides later.
 
-**Proof, not assertion:** [`src/seats/concurrency.test.ts`](backend/src/seats/concurrency.test.ts) fires genuinely parallel HTTP requests via `Promise.all` (never sequential `await`s) — first a 10-way race for one seat (exactly 1 succeeds, 9 get a clean `409`, and the DB's actual `heldById` is verified to match the one request that got `200`), then the specific `[1,2]`-vs-`[2,1]` reverse-order case (resolves as a clean `200`/`409` pair, never a `500`).
+**Proof, not assertion:** [`src/seats/concurrency.test.ts`](backend/src/seats/concurrency.test.ts) fires genuinely parallel HTTP requests via `Promise.all` (never sequential `await`s) — first a 10-way race for one seat (exactly 1 succeeds, 9 get a clean `409`, and the DB's actual `heldById` is verified to match the one request that got `200`), then the specific `[1,2]`-vs-`[2,1]` reverse-order case (resolves as a clean `200`/`409` pair, never a `500`). That test proves correctness at N=10; see [Concurrency benchmark](#concurrency-benchmark) below for the same guarantee at real load, with actual latency numbers, not just a pass/fail.
 
 ### 2. Payments: webhook-only confirmation, never the client
 
@@ -528,7 +529,7 @@ Once `confirmPayment` commits a booking (the same webhook-driven path [decision 
 
 ```
 SeatLock/
-├─ backend/     Express API, Prisma schema/migrations, all backend tests
+├─ backend/     Express API, Prisma schema/migrations, all backend tests, benchmark scripts
 └─ frontend/    React + Vite SPA
 ```
 
@@ -540,6 +541,7 @@ Each has its own `package.json`, `.env`, and is run independently — there's no
 
 ### Prerequisites
 - Node.js, PostgreSQL running locally, an Upstash Redis database (free tier), a Razorpay test-mode account, a Resend account, a Google Cloud OAuth client.
+- [k6](https://k6.io) — only needed to run the [concurrency benchmark](#concurrency-benchmark); the app itself doesn't depend on it.
 
 ### Backend
 
@@ -581,7 +583,7 @@ cd backend
 npm test
 ```
 
-**159 tests**, and the deliberate choice throughout was to test against real dependencies wherever practical rather than mock them away:
+**192 tests**, and the deliberate choice throughout was to test against real dependencies wherever practical rather than mock them away:
 
 - A real local Postgres database (no in-memory DB substitute).
 - A real Upstash Redis instance for every rate-limit test.
@@ -599,13 +601,42 @@ npx vitest run src/seats/concurrency.test.ts
 
 ---
 
+## Concurrency benchmark
+
+`concurrency.test.ts` proves correctness — exactly one winner out of N. It doesn't say anything about what that costs, or how it behaves at a load bigger than 10. This benchmark fires genuinely concurrent load at a running server (real Express, real Postgres row locks, real Redis pre-lock) using [k6](https://k6.io) and reports actual latency and throughput, not just pass/fail.
+
+**Two phases, because k6 can't touch Prisma.** k6 scripts run in their own sandboxed JS runtime — no Node module resolution, no database access. [`scripts/benchmarkSetup.ts`](backend/scripts/benchmarkSetup.ts) does everything that needs Prisma (bulk-creates real users and seats, mints real JWTs by calling the exact same `signAccessToken` a real login uses) and writes it to a JSON fixture; [`scripts/k6/concurrencyLoad.js`](backend/scripts/k6/concurrencyLoad.js) reads that fixture and fires the actual load; [`scripts/benchmarkCleanup.ts`](backend/scripts/benchmarkCleanup.ts) removes everything afterward by id-range, not by collecting every generated id into a query.
+
+```bash
+npm run dev                       # in one terminal
+npm run benchmark:concurrency     # in another -- setup, all 3 scenarios, cleanup
+```
+
+Three scenarios, each sized so every request is genuinely in flight at once (`vus === iterations` in k6's `shared-iterations` executor — every virtual user gets exactly one request, started together, not a smaller pool cycling through a queue):
+
+| Scenario | Requests | Wins | Conflicts | p90 | Throughput |
+|---|---|---|---|---|---|
+| **A** — 200 users racing 1 seat | 200 | 1 | 199 | 2.07s | 84.7 req/s |
+| **B** — 200 users, 200 different seats (no contention) | 200 | 200 | 0 | 1.91s | 103.2 req/s |
+| **C** — opening-night stampede: 20 hot seats × 10 racers each | 200 | 20 | 180 | 1.43s | 131.0 req/s |
+
+(One representative run against a real remote Upstash Redis instance, not local. Absolute numbers move around between runs depending on network conditions to Upstash and what else the machine is doing — A consistently coming in at or above B held up across every run I tried, but the exact gap varies. Reproduce with the commands above.)
+
+**What this proves, precisely.** Every run, every scenario, the winner count matched the seat count exactly — 1 for A, 200 for B, 20 for C — with zero double-bookings, enforced by k6's own `thresholds` (`wins: [count==N]`), not just eyeballed after the fact. That's the actual concurrency claim this project makes, backed by a number instead of just a passing unit test.
+
+**A real limit this benchmark found, that has nothing to do with the locking logic.** The first attempt at this ran 2,000 users per scenario. 1,768 of 2,000 requests in scenario A came back as `ECONNREFUSED` — refused before ever reaching Express, not a `409`. A single local Node process has a real, fairly low ceiling on how many *brand-new* connections it can accept in the same instant (somewhere between 200 and 500 on this machine) — that's an OS/Node listen-backlog limit, not anything about Postgres or Redis, and not something to paper over by tuning backlog size on the real `app.listen()` call just to make a benchmark's numbers bigger. 200 is the size in the table above because it's the largest that reliably lands every request; going bigger would mean measuring connection-queue behavior, not the concurrency guarantee this benchmark exists to prove. This is exactly the kind of ceiling [At scale](#at-scale-handling-a-blockbusters-opening-night) below already names as the next real bottleneck — the benchmark just turned it from a hypothetical into a measured number.
+
+**What this does and doesn't prove.** It confirms the row-lock guarantee holds under real concurrent load 20x past the test suite's N=10, with real numbers attached instead of an assertion. It's a single-machine measurement against a remote Redis instance, bounded by that machine's own connection-acceptance ceiling — not a controlled production load test.
+
+---
+
 ## At scale: handling a blockbuster's opening night
 
-The current design assumes one Postgres instance handling row locks directly, correct up to moderate concurrent load. The next real bottleneck at genuine scale would be **write contention on a single hot show** — thousands of users hammering `SELECT ... FOR UPDATE` against the same few hundred seat rows in the same few seconds. A few directions worth naming (not built here — deliberately out of scope for this project, per the same reasoning as every other scope cut above):
+The current design assumes one Postgres instance handling row locks directly, correct up to moderate concurrent load. The next real bottleneck at genuine scale would be **write contention on a single hot show** — thousands of users hammering `SELECT ... FOR UPDATE` against the same few hundred seat rows in the same few seconds. A few directions worth naming (mostly not built here — deliberately out of scope for this project, per the same reasoning as every other scope cut above; one of them since stopped being hypothetical):
 
 - **A queue in front of the hold endpoint** for a specific show once its contention crosses a threshold — turn "thousands of simultaneous lock attempts" into "a fair, ordered queue that processes holds one at a time," trading a little latency for eliminating lock-contention thrashing entirely.
-- **A distributed lock (e.g., Redis-based) per seat** as a first filter before ever touching Postgres, so failed attempts never reach the database at all — cheaper to reject at the edge than inside a DB transaction.
+- ~~A distributed lock (Redis-based) per seat as a first filter before ever touching Postgres~~ — **this one's actually built.** `RedisSeatLock` sits in front of the Postgres transaction on every hold, fails open if Redis itself is unreachable, and Scenario A of the [concurrency benchmark](#concurrency-benchmark) above is that exact path under real concurrent load. Left here, struck through, because it's a good example of one of these "future direction" bullets actually getting built later in the project instead of staying a bullet point.
 - **Read replicas for the seat map / show list endpoints**, which are read-heavy and don't need to see the absolute latest state the way the hold transaction does — the hold and payment paths stay on the primary, everything else can read from a replica.
 - Razorpay's webhooks are already documented at-least-once delivery; at real scale that fact doesn't change, it just means the idempotency check already built here keeps mattering exactly as much as it does now — nothing new to build for that specifically.
 
-The point of naming these rather than building them: the current design's bottleneck is well-understood and the mitigations are standard, well-known patterns — the interesting engineering here was proving *correctness* under concurrency and payment races at the scale this project actually needs, not building infrastructure for a scale it doesn't have.
+The point of naming these rather than building all of them: the current design's bottleneck is well-understood and the mitigations are standard, well-known patterns — the interesting engineering here was proving *correctness* under concurrency and payment races at the scale this project actually needs, not building infrastructure for a scale it doesn't have. The Redis pre-lock got built anyway because a fast, cheap rejection for an already-contested seat turned out to be worth having well before this project is anywhere near the scale the rest of this list is actually about.

@@ -10,6 +10,9 @@
     "start": "node dist/index.js",
     "lint": "eslint .",
     "test": "vitest run",
+    "benchmark:setup": "tsx scripts/benchmarkSetup.ts",
+    "benchmark:cleanup": "tsx scripts/benchmarkCleanup.ts",
+    "benchmark:concurrency": "npm run benchmark:setup && k6 run scripts/k6/concurrencyLoad.js --env SCENARIO=a && k6 run scripts/k6/concurrencyLoad.js --env SCENARIO=b && k6 run scripts/k6/concurrencyLoad.js --env SCENARIO=c && npm run benchmark:cleanup",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev"
   },

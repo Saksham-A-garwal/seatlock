@@ -4,3 +4,4 @@ dist/
 *.log
 docs/
 .claude/
+backend/scripts/k6/fixture.json

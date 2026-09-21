@@ -24,7 +24,11 @@ function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-function signAccessToken(userId: number, role: Role): string {
+// Exported for scripts/benchmarkSetup.ts: minting a real access token this
+// way (not a hand-rolled copy of the same jwt.sign call) means the
+// benchmark can never silently drift from what a real login actually
+// issues.
+export function signAccessToken(userId: number, role: Role): string {
   const payload: AccessTokenPayload = { sub: userId, role };
   return jwt.sign(payload, config.jwtSecret, { expiresIn: `${config.accessTokenTtlMinutes}m` });
 }
