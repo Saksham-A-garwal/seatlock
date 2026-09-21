@@ -138,7 +138,7 @@ describe("PaymentService", () => {
       expect(booking?.totalPrice.toNumber()).toBe(300);
     });
 
-    it("sends a confirmation email with an inline QR ticket once the booking is confirmed", async () => {
+    it("sends a confirmation email with the QR ticket once the booking is confirmed", async () => {
       const show = await createTestShow();
       showId = show.id;
       const seat = await createTestSeat(showId, { price: 300 });
@@ -164,9 +164,8 @@ describe("PaymentService", () => {
       expect(message.subject).toContain(show.movieName);
       expect(message.text).toContain(`${seat.rowLabel}${seat.seatNumber}`);
       expect(message.text).toContain(`SEATLOCK-BOOKING-${booking.id}`);
-      expect(message.html).toContain("cid:booking-qr");
+      expect(message.html).toContain(`/bookings/${booking.id}/qr-image?token=`);
       expect(message.attachments).toHaveLength(1);
-      expect(message.attachments![0].contentId).toBe("booking-qr");
       expect(message.attachments![0].contentType).toBe("image/png");
       expect(message.attachments![0].content.length).toBeGreaterThan(0);
     });

@@ -4,6 +4,7 @@ import { config } from "../config";
 import { prisma } from "../db/prisma";
 import { EmailSender } from "./EmailSender";
 import { OtpError } from "./errors";
+import { buildOtpEmail } from "./otpEmail";
 
 function hashCode(code: string): string {
   return crypto.createHash("sha256").update(code).digest("hex");
@@ -25,11 +26,7 @@ export class OtpService {
       data: { email, codeHash, expiresAt },
     });
 
-    await this.emailSender.send({
-      to: email,
-      subject: "Your SeatLock sign-in code",
-      text: `Your sign-in code is ${code}. It expires in ${config.otpTtlMinutes} minutes.`,
-    });
+    await this.emailSender.send(buildOtpEmail(email, code, config.otpTtlMinutes));
   }
 
   // Returns the signed-in user on success; creates the account on first

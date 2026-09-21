@@ -12,6 +12,9 @@ export const config = {
   port: Number(process.env.PORT ?? "3000"),
   nodeEnv: process.env.NODE_ENV ?? "development",
   frontendOrigin: process.env.FRONTEND_ORIGIN ?? "http://localhost:5173",
+  // Public base URL of this API -- emails embed images from it, so it must be
+  // reachable by the recipient's mail client, not just from this machine.
+  apiPublicUrl: process.env.API_PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? "3000"}`,
 
   jwtSecret: requireEnv("JWT_SECRET"),
   accessTokenTtlMinutes: Number(process.env.JWT_ACCESS_TTL_MINUTES ?? "15"),

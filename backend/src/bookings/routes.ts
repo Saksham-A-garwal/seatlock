@@ -3,7 +3,7 @@ import { requireAuth } from "../auth/middleware";
 import { asyncHandler } from "../utils/asyncHandler";
 import { parsePositiveInt } from "../utils/parsePositiveInt";
 import { CancellationWindowPassedError, InvalidBookingTransitionError } from "../domain/errors";
-import { generateBookingQrPng } from "./bookingQrCode";
+import { generateBookingQrPng, isValidQrToken } from "./bookingQrCode";
 import { BookingService } from "./BookingService";
 import { BookingNotConfirmedError, BookingNotFoundError } from "./errors";
 
@@ -68,6 +68,24 @@ export function createBookingsRouter(): Router {
         }
         throw error;
       }
+    })
+  );
+
+  // Unauthenticated on purpose: this is the image URL embedded in the
+  // confirmation email, and mail clients can't attach a bearer token when
+  // they load it. The HMAC token in the query string is the access check.
+  router.get(
+    "/bookings/:id/qr-image",
+    asyncHandler(async (req, res) => {
+      const bookingId = parsePositiveInt(req.params.id);
+      const token = typeof req.query.token === "string" ? req.query.token : "";
+      if (bookingId === null || !isValidQrToken(bookingId, token)) {
+        res.status(404).json({ error: { code: "NOT_FOUND", message: "Not found" } });
+        return;
+      }
+
+      const qrPng = await generateBookingQrPng(bookingId);
+      res.status(200).set({ "Content-Type": "image/png", "Cache-Control": "public, max-age=86400" }).send(qrPng);
     })
   );
 
