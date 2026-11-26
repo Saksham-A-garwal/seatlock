@@ -9,6 +9,19 @@ function uniqueEmail(): string {
   return `route-test-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`;
 }
 
+function setCookies(res: request.Response): string[] {
+  return (res.headers["set-cookie"] ?? []) as unknown as string[];
+}
+
+// The response also expires the old-path cookie, so pick the one that carries a token.
+function issuedCookie(res: request.Response): string {
+  const cookie = setCookies(res).find((value) => /^refreshToken=[^;]/.test(value));
+  if (!cookie) {
+    throw new Error("No refresh token cookie was issued");
+  }
+  return cookie;
+}
+
 // These routes share a per-IP rate limit (the whole "auth" route group), and
 // every test in this file runs from the same source IP. Without resetting
 // it, running the suite more than once inside the same 60s window would
@@ -70,8 +83,7 @@ describe("auth routes", () => {
     expect(verifyRes.body.user.email).toBe(email);
     expect(verifyRes.body.accessToken).toBeTruthy();
     expect(verifyRes.body.refreshToken).toBeUndefined(); // never in the JSON body
-    const setCookieHeader = verifyRes.headers["set-cookie"];
-    expect(setCookieHeader?.[0]).toMatch(/^refreshToken=.*HttpOnly/);
+    expect(issuedCookie(verifyRes)).toMatch(/^refreshToken=.*HttpOnly/);
 
     const refreshRes = await agent.post("/auth/refresh");
     expect(refreshRes.status).toBe(200);
@@ -85,6 +97,41 @@ describe("auth routes", () => {
     // holds must be rejected.
     const afterLogoutRes = await agent.post("/auth/refresh");
     expect(afterLogoutRes.status).toBe(401);
+  });
+
+  it("revokes the refresh token on logout, so a copied cookie cannot be replayed", async () => {
+    const emailSender = new FakeEmailSender();
+    const app = createApp({ emailSender });
+    const agent = request.agent(app);
+    const email = uniqueEmail();
+    createdEmails.push(email);
+
+    await agent.post("/auth/otp/request").send({ email });
+    const code = emailSender.lastCodeFor(email);
+    const verifyRes = await agent.post("/auth/otp/verify").send({ email, code });
+    const copiedCookie = issuedCookie(verifyRes);
+
+    const logoutRes = await agent.post("/auth/logout");
+    expect(logoutRes.status).toBe(200);
+
+    const replayRes = await request(app).post("/auth/refresh").set("Cookie", [copiedCookie]);
+    expect(replayRes.status).toBe(401);
+  });
+
+  it("expires the cookie left at the old /auth/refresh path when it issues a new one", async () => {
+    const emailSender = new FakeEmailSender();
+    const app = createApp({ emailSender });
+    const email = uniqueEmail();
+    createdEmails.push(email);
+
+    await request(app).post("/auth/otp/request").send({ email });
+    const code = emailSender.lastCodeFor(email);
+    const verifyRes = await request(app).post("/auth/otp/verify").send({ email, code });
+    const cookies = setCookies(verifyRes);
+
+    expect(cookies).toHaveLength(2);
+    expect(cookies[0]).toMatch(/^refreshToken=;.*Path=\/auth\/refresh;.*Expires=Thu, 01 Jan 1970/);
+    expect(cookies[1]).toMatch(/^refreshToken=[^;]+;.*Path=\/auth;/);
   });
 
   it("GET /auth/me returns the signed-in user, and rejects an unauthenticated request", async () => {
@@ -135,10 +182,11 @@ describe("auth routes", () => {
     await request(app).post("/auth/otp/request").send({ email });
     const code = emailSender.lastCodeFor(email);
     const verifyRes = await request(app).post("/auth/otp/verify").send({ email, code });
-    const originalCookie = verifyRes.headers["set-cookie"][0] as string;
+    const originalCookie = issuedCookie(verifyRes);
 
     // Rotate once using the original cookie.
-    await request(app).post("/auth/refresh").set("Cookie", [originalCookie]);
+    const firstRes = await request(app).post("/auth/refresh").set("Cookie", [originalCookie]);
+    expect(firstRes.status).toBe(200);
 
     // Presenting the SAME (now rotated-out) cookie again must be rejected.
     const reuseRes = await request(app).post("/auth/refresh").set("Cookie", [originalCookie]);

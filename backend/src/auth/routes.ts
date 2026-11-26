@@ -14,16 +14,20 @@ import { issueTokenPair, revokeRefreshToken, rotateRefreshToken } from "./tokens
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REFRESH_COOKIE_NAME = "refreshToken";
-// Scoped to just this one path so the cookie is never attached to any other
-// request -- it's useless to steal via XSS on any other endpoint, and the
-// browser doesn't even send it anywhere else in the first place.
-const REFRESH_COOKIE_PATH = "/auth/refresh";
+// Scoped to the auth routes only, so refresh and logout both receive the cookie and no
+// other part of the API ever does.
+const REFRESH_COOKIE_PATH = "/auth";
+// Cookies issued under the old path must be expired: browsers send the more specific path first,
+// so a leftover one would shadow the current token and trip reuse detection.
+const LEGACY_REFRESH_COOKIE_PATH = "/auth/refresh";
 
 function toPublicUser(user: User) {
   return { id: user.id, email: user.email, role: user.role };
 }
 
 function setRefreshCookie(res: Response, refreshToken: string): void {
+  // Clear before setting: the cookie jar used in tests matches paths by prefix when replacing.
+  res.clearCookie(REFRESH_COOKIE_NAME, { path: LEGACY_REFRESH_COOKIE_PATH });
   res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
     httpOnly: true,
     secure: config.nodeEnv === "production",
@@ -35,6 +39,7 @@ function setRefreshCookie(res: Response, refreshToken: string): void {
 
 function clearRefreshCookie(res: Response): void {
   res.clearCookie(REFRESH_COOKIE_NAME, { path: REFRESH_COOKIE_PATH });
+  res.clearCookie(REFRESH_COOKIE_NAME, { path: LEGACY_REFRESH_COOKIE_PATH });
 }
 
 // otpService is injected rather than constructed here so tests can pass a
